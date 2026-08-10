@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'https://packet-pulse-x2o8.vercel.app/',
         changeOrigin: true,
       },
     },
