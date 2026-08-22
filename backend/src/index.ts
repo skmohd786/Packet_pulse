@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import apiRoutes from './routes/api';
+import aiRoutes from './routes/ai';
 import { initDb } from './db';
 import { initMonitorEngine } from './services/monitorEngine';
 
@@ -14,17 +15,23 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: '*' }));
+// Dynamic CORS configuration for deployed frontend (Vercel)
+const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : '*';
+
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 
 // API Routes
 app.use('/api', apiRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'PacketPulse Real-Time Observability Engine', timestamp: new Date() });
 });
 
-// Serve frontend static build if available
+// Serve frontend static build if available locally
 const distPath = path.join(__dirname, '../../frontend/dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
@@ -40,9 +47,10 @@ const server = http.createServer(app);
 
 const io = new SocketIOServer(server, {
     cors: {
-        origin: '*',
-        methods: ['GET', 'POST']
-    }
+        origin: allowedOrigins,
+        methods: ['GET', 'POST'],
+        credentials: true,
+    },
 });
 
 io.on('connection', (socket) => {
@@ -59,7 +67,7 @@ async function startServer() {
     server.listen(PORT, () => {
         console.log(`====================================================`);
         console.log(`  PacketPulse Backend Server Running on Port ${PORT}`);
-        console.log(`  Real-Time WebSockets Active (Socket.IO)`);
+        console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
         console.log(`====================================================`);
     });
 }

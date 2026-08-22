@@ -2,11 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Header } from './components/Header';
 import { AddMonitorModal } from './components/AddMonitorModal';
+import { MonitorOverview } from './components/MonitorOverview';
 import { LiveChart } from './components/LiveChart';
-import { IncidentsList } from './components/IncidentsList';
+import { IncidentDetails } from './components/IncidentDetails';
 import { MonitorsTable } from './components/MonitorsTable';
 import { EmptyState } from './components/EmptyState';
 import { Monitor, Metric, Incident } from './types';
+
+// Environment Variable Bindings for Production Deployment (Vercel + Render)
+const API_BASE = import.meta.env.VITE_API_URL || '';
+const WS_URL = import.meta.env.VITE_WS_URL || undefined;
 
 export const App: React.FC = () => {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -22,8 +27,8 @@ export const App: React.FC = () => {
   const fetchData = async () => {
     try {
       const [monRes, incRes] = await Promise.all([
-        fetch('/api/monitors').then((r) => r.json()),
-        fetch('/api/incidents').then((r) => r.json()),
+        fetch(`${API_BASE}/api/monitors`).then((r) => r.json()),
+        fetch(`${API_BASE}/api/incidents`).then((r) => r.json()),
       ]);
 
       if (monRes.success && monRes.monitors) {
@@ -47,7 +52,7 @@ export const App: React.FC = () => {
   // Fetch metrics history for selected monitor and time range
   const fetchMetricsForMonitor = async (monitorId: string | number, range: string) => {
     try {
-      const res = await fetch(`/api/monitors/${monitorId}/metrics?range=${range}&limit=100`).then((r) => r.json());
+      const res = await fetch(`${API_BASE}/api/monitors/${monitorId}/metrics?range=${range}&limit=100`).then((r) => r.json());
       if (res.success && res.metrics) {
         setMetricsHistory((prev) => ({
           ...prev,
@@ -62,16 +67,15 @@ export const App: React.FC = () => {
   useEffect(() => {
     fetchData();
 
-    // Socket.IO Real-Time Telemetry Connection
-    // Architecture: Monitoring Engine -> New Metric -> Node.js Backend -> Socket.IO/WebSocket -> React Dashboard
-    const socket: Socket = io({
+    // Socket.IO Real-Time Telemetry Connection to backend WS URL
+    const socket: Socket = io(WS_URL, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 15,
       reconnectionDelay: 1000,
     });
 
     socket.on('connect', () => {
-      console.log('Socket.IO WebSocket connected');
+      console.log('Socket.IO WebSocket connected to server');
       setWsStatus('Connected');
     });
 
@@ -154,7 +158,7 @@ export const App: React.FC = () => {
     name: string,
     interval: number
   ) => {
-    const res = await fetch('/api/monitors', {
+    const res = await fetch(`${API_BASE}/api/monitors`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain, name, interval }),
@@ -170,7 +174,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteMonitor = async (id: string | number) => {
-    const res = await fetch(`/api/monitors/${id}`, { method: 'DELETE' }).then(
+    const res = await fetch(`${API_BASE}/api/monitors/${id}`, { method: 'DELETE' }).then(
       (r) => r.json()
     );
 
@@ -188,7 +192,7 @@ export const App: React.FC = () => {
   };
 
   const handleResolveIncident = async (id: string | number) => {
-    const res = await fetch(`/api/incidents/${id}/resolve`, {
+    const res = await fetch(`${API_BASE}/api/incidents/${id}/resolve`, {
       method: 'POST',
     }).then((r) => r.json());
 
@@ -230,7 +234,14 @@ export const App: React.FC = () => {
           <EmptyState type="no-targets" onAction={() => setIsAddModalOpen(true)} />
         ) : (
           <>
-            {/* Primary Visual Element: Response Time & Historical Metrics Chart */}
+            {/* Monitor KPI Overview Strip */}
+            <MonitorOverview
+              monitors={monitors}
+              incidents={incidents}
+              selectedMonitor={selectedMonitor}
+            />
+
+            {/* Primary Visual Element: Live Response Time & Historical Metrics Chart */}
             <LiveChart
               monitor={selectedMonitor}
               metrics={currentMetrics}
@@ -238,7 +249,7 @@ export const App: React.FC = () => {
               onRangeChange={(r) => setSelectedRange(r)}
             />
 
-            {/* Split Grid: Target Table & Incident Panel */}
+            {/* Split Grid: Target Table & Incident AI Details Panel */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <MonitorsTable
@@ -250,7 +261,7 @@ export const App: React.FC = () => {
               </div>
 
               <div>
-                <IncidentsList incidents={incidents} onResolve={handleResolveIncident} />
+                <IncidentDetails incidents={incidents} onResolve={handleResolveIncident} />
               </div>
             </div>
           </>

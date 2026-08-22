@@ -1,67 +1,80 @@
-# PacketPulse MVP — Real-Time Website Health Monitoring Platform
+# PacketPulse — Real-Time Website & Server Health Monitoring Platform
 
 PacketPulse is a real-time observability platform that continuously monitors website availability, HTTP status, response time, uptime, and incident detection with live telemetry streamed directly to a dynamic React dashboard via WebSockets.
 
 ---
 
-## Key Features
+## Production Deployment Architecture
 
-- **Domain Monitoring**: Input any domain/URL (e.g. `google.com`, `example.com`, `httpstat.us/500`) for continuous active health monitoring.
-- **Real HTTP Health Checks**: Executes actual HTTP requests with latency timing, HTTP status code checks, and DNS lookup.
-- **Dynamic Health Status**: Categorizes target health into **HEALTHY**, **WARNING**, or **CRITICAL** based on response latency, status codes, and reachability.
-- **Uptime Calculation**: Computes live percentage uptime per domain based on historical check metrics stored in MongoDB.
-- **MongoDB Metric Storage**: Persists monitor configurations, real-time metrics, and incident records using Mongoose models.
-- **Real-Time WebSockets**: Pushes live metric pings, status transitions, and incident alerts directly to the frontend without browser reloads via Socket.IO.
-- **Live Response Time Chart**: Interactive latency stream graph built with Recharts with historical time range selectors (15m, 1h, 6h, 24h).
-- **Automated Incident Detection**: Automatically generates incidents when monitors experience failures or status degradation, with timeline logging and resolution controls.
+```
+┌────────────────────────────────┐         REST & WebSockets         ┌────────────────────────────────┐
+│   Vercel (React Frontend)      ├──────────────────────────────────►│    Render (Node.js Backend)    │
+│  - VITE_API_URL                │                                   │   - PORT                       │
+│  - VITE_WS_URL                 │                                   │   - MONGODB_URI                │
+└────────────────────────────────┘                                   │   - CORS_ORIGIN                │
+                                                                     └───────────────┬────────────────┘
+                                                                                     │
+                                                                            Mongoose Connection
+                                                                                     │
+                                                                     ┌───────────────▼────────────────┐
+                                                                     │     MongoDB Atlas Database     │
+                                                                     └────────────────────────────────┘
+```
 
 ---
 
 ## Tech Stack
 
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + Recharts + Socket.IO Client
-- **Backend**: Node.js + Express + TypeScript + Socket.IO Server + Node Fetch
-- **Database**: MongoDB with Mongoose (`MONGODB_URI=mongodb://localhost:27017/packetpulse`)
+- **Backend**: Node.js + Express + TypeScript + Socket.IO Server + Mongoose
+- **Database**: MongoDB Atlas (`MONGODB_URI`)
 
 ---
 
-## Mongoose Data Models
+## 🚀 Production Deployment Instructions
 
-- **Monitor**: `domain`, `interval`, `status`, `lastStatusCode`, `lastResponseTime`, `uptime`, `createdAt`, `updatedAt` (Index: `domain`)
-- **Metric**: `monitorId`, `domain`, `httpStatus`, `responseTime`, `dnsTime`, `isUp`, `uptime`, `status`, `errorMessage`, `timestamp` (Indexes: `monitorId`, `timestamp`, `domain`)
-- **Incident**: `monitorId`, `domain`, `severity`, `message`, `details`, `relevantMetricValues`, `resolvedStatus`, `timestamp`, `resolvedAt` (Indexes: `monitorId`, `timestamp`, `domain`)
+### 1. Database Setup (MongoDB Atlas)
+1. Log in to [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
+2. Create a Cluster and Database named `packetpulse`.
+3. Create a Database User with read/write permissions.
+4. Copy your connection string (e.g. `mongodb+srv://<user>:<password>@cluster.mongodb.net/packetpulse?retryWrites=true&w=majority`).
 
 ---
 
-## Setup & Running the Application
+### 2. Backend Deployment (Render)
+1. Log in to [Render](https://render.com) and create a **Web Service**.
+2. Connect your Git repository and set Root Directory to `backend`.
+3. Build Command: `npm install && npm run build`
+4. Start Command: `npm start`
+5. Configure Environment Variables in Render:
+   - `NODE_ENV`: `production`
+   - `PORT`: `5000` (or Render default)
+   - `MONGODB_URI`: `<Your MongoDB Atlas Connection String>`
+   - `CORS_ORIGIN`: `https://your-frontend-app.vercel.app`
 
-### 1. Prerequisites
-- Node.js v18+ and npm installed.
-- MongoDB instance running locally on port 27017 (`mongodb://localhost:27017/packetpulse`).
+---
 
-### 2. Backend Installation & Startup
+### 3. Frontend Deployment (Vercel)
+1. Log in to [Vercel](https://vercel.com) and import your Git repository.
+2. Set Root Directory to `frontend`.
+3. Build Command: `npm run build`
+4. Output Directory: `dist`
+5. Configure Environment Variables in Vercel:
+   - `VITE_API_URL`: `https://your-backend-app.onrender.com`
+   - `VITE_WS_URL`: `https://your-backend-app.onrender.com`
+
+---
+
+## Local Development
+
 ```bash
+# Backend Setup
 cd backend
 npm install
 npm run dev
-```
-The backend server runs on `http://localhost:5000` with WebSocket server attached.
 
-### 3. Frontend Installation & Startup
-```bash
+# Frontend Setup
 cd frontend
 npm install
 npm run dev
 ```
-The frontend Vite server runs on `http://localhost:5173`.
-
----
-
-## API Endpoints
-
-- `POST /api/monitors` — Add a new domain/URL to monitor
-- `GET /api/monitors` — Fetch all monitored domains and current statuses
-- `GET /api/monitors/:id/metrics?range=15m|1h|6h|24h` — Fetch historical metric pings for charts
-- `DELETE /api/monitors/:id` — Stop monitoring a domain
-- `GET /api/incidents` — List active and historical incidents
-- `POST /api/incidents/:id/resolve` — Resolve an active incident
