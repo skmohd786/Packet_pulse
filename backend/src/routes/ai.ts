@@ -23,7 +23,7 @@ router.post('/analyze-incident', async (req: Request, res: Response) => {
         // Fetch historical metrics for incident's monitor
         const metrics = await dbGetMetricsByMonitorId(incident.monitor_id || incident.monitorId!, 30);
 
-        // Analyze using LLM AI Service
+        // Analyze using Google Gemini AI Service
         const analysis = await analyzeIncidentTelemetry(incident, metrics);
 
         res.json({
@@ -32,17 +32,17 @@ router.post('/analyze-incident', async (req: Request, res: Response) => {
             analysis,
         });
     } catch (err: any) {
-        if (err.code === 'LLM_API_KEY_MISSING') {
+        if (err.code === 'GEMINI_API_KEY_MISSING' || err.code === 'LLM_API_KEY_MISSING') {
             return res.status(400).json({
                 success: false,
-                code: 'LLM_API_KEY_MISSING',
-                message: 'Configure LLM_API_KEY in environment variables to enable AI observability intelligence.',
+                code: 'GEMINI_API_KEY_MISSING',
+                message: 'Configure GEMINI_API_KEY in environment variables to enable AI observability intelligence.',
             });
         }
 
         res.status(500).json({
             success: false,
-            error: err.message || 'AI incident analysis failed',
+            error: err.message || 'Gemini AI incident analysis failed',
         });
     }
 });

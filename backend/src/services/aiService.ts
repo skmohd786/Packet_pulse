@@ -1,3 +1,4 @@
+import { GoogleGenAI } from '@google/genai';
 import { Incident, Metric } from '../types';
 
 export interface AIAnalysisResult {
@@ -12,14 +13,14 @@ export async function analyzeIncidentTelemetry(
     incident: Incident,
     metrics: Metric[]
 ): Promise<AIAnalysisResult> {
-    const apiKey = process.env.LLM_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || !apiKey.trim()) {
-        const error: any = new Error('LLM_API_KEY is not configured in environment variables');
-        error.code = 'LLM_API_KEY_MISSING';
+        const error: any = new Error('GEMINI_API_KEY is not configured in environment variables');
+        error.code = 'GEMINI_API_KEY_MISSING';
         throw error;
     }
 
-    const modelName = process.env.LLM_MODEL || 'gemini-1.5-flash';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const domain = incident.domain || 'Target Domain';
     const severity = incident.severity || 'CRITICAL';
     const title = incident.title || incident.message || `Incident on ${domain}`;
@@ -34,7 +35,7 @@ export async function analyzeIncidentTelemetry(
         return `[${time}] HTTP: ${status} | Latency: ${latency}ms | Status: ${m.status}`;
     }).join('\n');
 
-    const prompt = `You are PacketPulse AI, an expert observability and site reliability engineering assistant.
+    const prompt = `You are PacketPulse AI, an expert observability and site reliability engineering assistant powered by Google Gemini.
 Analyze the following real monitoring incident data:
 
 Target Domain: ${domain}
@@ -48,7 +49,7 @@ ${metricTelemetry || 'No recent telemetry pings captured.'}
 
 Instructions:
 Provide a developer-oriented root cause analysis. Strictly distinguish observed facts from possible causes.
-Return ONLY valid JSON matching this exact structure without markdown backticks:
+Return ONLY valid JSON matching this exact structure:
 {
   "summary": "Short developer summary of the incident (1-2 sentences)",
   "evidence": [
@@ -64,31 +65,18 @@ Return ONLY valid JSON matching this exact structure without markdown backticks:
   "confidence": 85
 }`;
 
-    // Call LLM API (Google Gemini API endpoint)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout limit
+    const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
 
     try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-            }),
-            signal: controller.signal,
+        const response = await ai.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+            },
         });
 
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`LLM API HTTP ${response.status}: ${errText.slice(0, 150)}`);
-        }
-
-        const data = await response.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const rawText = response.text || '';
         
         // Clean JSON formatting if model returns code fences
         const jsonMatch = rawText.match(/\{[\s\S]*\}/);
@@ -103,11 +91,10 @@ Return ONLY valid JSON matching this exact structure without markdown backticks:
             };
         }
 
-        throw new Error('Failed to parse structured JSON response from LLM');
+        throw new Error('Failed to parse structured JSON response from Gemini');
     } catch (err: any) {
-        clearTimeout(timeoutId);
-        if (err.name === 'AbortError') {
-            throw new Error('LLM API request timed out (10s limit)');
+        if (err.message && err.message.includes('API_KEY_INVALID')) {
+            throw new Error('Invalid GEMINI_API_KEY provided');
         }
         throw err;
     }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Sparkles, CheckCircle2, AlertTriangle, HelpCircle, RefreshCw } from 'lucide-react';
+import { Bot, Sparkles, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Incident } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -37,12 +37,12 @@ export const AIInsight: React.FC<AIInsightProps> = ({ incident }) => {
       }).then((r) => r.json());
 
       if (!res.success) {
-        if (res.code === 'LLM_API_KEY_MISSING') {
+        if (res.code === 'GEMINI_API_KEY_MISSING' || res.code === 'LLM_API_KEY_MISSING') {
           setStatus('unconfigured');
-          setErrorMessage(res.message || 'Configure LLM_API_KEY in environment to enable AI analysis.');
+          setErrorMessage(res.message || 'Configure GEMINI_API_KEY in environment to enable AI analysis.');
         } else {
           setStatus('error');
-          setErrorMessage(res.error || 'AI analysis request failed.');
+          setErrorMessage(res.error || 'Gemini AI analysis request failed.');
         }
         return;
       }
@@ -51,7 +51,7 @@ export const AIInsight: React.FC<AIInsightProps> = ({ incident }) => {
       setStatus('complete');
     } catch (err: any) {
       setStatus('error');
-      setErrorMessage(err.message || 'Network error executing AI analysis.');
+      setErrorMessage(err.message || 'Network error executing Gemini AI analysis.');
     }
   };
 
@@ -60,7 +60,7 @@ export const AIInsight: React.FC<AIInsightProps> = ({ incident }) => {
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>AI INCIDENT ANALYSIS</span>
+          <span>AI INCIDENT ANALYSIS (GEMINI)</span>
         </div>
 
         {status === 'idle' && (
@@ -77,7 +77,7 @@ export const AIInsight: React.FC<AIInsightProps> = ({ incident }) => {
       {status === 'analyzing' && (
         <div className="p-3 bg-zinc-950 rounded border border-zinc-800 text-zinc-400 flex items-center gap-2">
           <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-          <span>Analyzing incident telemetry with AI engine...</span>
+          <span>Analyzing incident telemetry with Google Gemini...</span>
         </div>
       )}
 
@@ -85,10 +85,10 @@ export const AIInsight: React.FC<AIInsightProps> = ({ incident }) => {
         <div className="p-3 bg-zinc-950 rounded border border-zinc-800 text-zinc-400">
           <div className="flex items-center gap-2 text-amber-400 mb-1 font-semibold">
             <AlertTriangle className="w-3.5 h-3.5" />
-            <span>AI Intelligence Unconfigured</span>
+            <span>Gemini Intelligence Unconfigured</span>
           </div>
           <p className="text-[11px] text-zinc-500">
-            Configure <code className="text-emerald-400">LLM_API_KEY</code> in environment variables to enable observability intelligence.
+            Configure <code className="text-emerald-400">GEMINI_API_KEY</code> in environment variables to enable AI observability intelligence.
           </p>
         </div>
       )}
@@ -96,7 +96,7 @@ export const AIInsight: React.FC<AIInsightProps> = ({ incident }) => {
       {status === 'error' && (
         <div className="p-3 bg-zinc-950 rounded border border-rose-900/60 text-rose-300">
           <div className="flex items-center justify-between mb-1 font-semibold">
-            <span>LLM Error: {errorMessage}</span>
+            <span>Gemini Error: {errorMessage}</span>
             <button
               onClick={handleAnalyze}
               className="text-[10px] text-rose-400 hover:underline"
