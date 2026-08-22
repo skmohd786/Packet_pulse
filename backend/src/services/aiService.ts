@@ -20,12 +20,13 @@ export async function analyzeIncidentTelemetry(
     incident: Incident,
     metrics: Metric[]
 ): Promise<AIAnalysisResult> {
-    const apiKey = process.env.GEMINI_API_KEY;
+    let apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || !apiKey.trim()) {
         const error: any = new Error('GEMINI_API_KEY is not configured in environment variables');
         error.code = 'GEMINI_API_KEY_MISSING';
         throw error;
     }
+    apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const domain = incident.domain || 'Target Domain';
