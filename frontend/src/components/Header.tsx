@@ -1,18 +1,18 @@
 import React from 'react';
-import { Activity, Plus, ShieldCheck, AlertTriangle, Radio } from 'lucide-react';
+import { Activity, Plus, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Monitor, Incident } from '../types';
 
 interface HeaderProps {
   monitors: Monitor[];
   incidents: Incident[];
-  isConnected: boolean;
+  isPolling: boolean;
   onOpenAddModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   monitors,
   incidents,
-  isConnected,
+  isPolling,
   onOpenAddModal,
 }) => {
   const activeIncidents = incidents.filter((i) => i.status === 'OPEN');
@@ -23,10 +23,6 @@ export const Header: React.FC<HeaderProps> = ({
           monitors.length
         ).toFixed(2)
       : '100.00';
-
-  const hasCritical = monitors.some((m) => m.status === 'CRITICAL');
-  const hasWarning = monitors.some((m) => m.status === 'WARNING');
-  const systemStatus = hasCritical ? 'CRITICAL' : hasWarning ? 'WARNING' : 'HEALTHY';
 
   return (
     <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
@@ -42,20 +38,20 @@ export const Header: React.FC<HeaderProps> = ({
                 Packet<span className="text-cyan-400">Pulse</span>
               </h1>
               <span className="text-xs px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 font-mono border border-cyan-500/20">
-                MVP v1.0
+                Checkpoint 2
               </span>
             </div>
-            <p className="text-xs text-slate-400">Real-Time Website & Health Observability</p>
+            <p className="text-xs text-slate-400">Real HTTP Website Monitoring & PostgreSQL Metrics</p>
           </div>
         </div>
 
         {/* System Stats Bar */}
         <div className="flex items-center gap-6 bg-slate-950/60 px-4 py-2 rounded-xl border border-slate-800 text-xs">
           <div className="flex items-center gap-2">
-            <Radio className={`w-3.5 h-3.5 ${isConnected ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
-            <span className="text-slate-400">WebSocket:</span>
-            <span className={isConnected ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-              {isConnected ? 'LIVE' : 'DISCONNECTED'}
+            <RefreshCw className={`w-3.5 h-3.5 ${isPolling ? 'text-emerald-400 animate-spin' : 'text-slate-500'}`} />
+            <span className="text-slate-400">REST Polling:</span>
+            <span className={isPolling ? 'text-emerald-400 font-semibold font-mono' : 'text-slate-400 font-semibold'}>
+              ACTIVE (3s)
             </span>
           </div>
 

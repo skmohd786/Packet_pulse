@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { Activity, ShieldCheck, AlertTriangle, Cpu, HardDrive, RefreshCw } from 'lucide-react';
+import { Activity, ShieldCheck, AlertTriangle, Cpu } from 'lucide-react';
 import { Header } from './components/Header';
 import { AddMonitorModal } from './components/AddMonitorModal';
 import { LiveChart } from './components/LiveChart';
@@ -14,14 +13,12 @@ export const App: React.FC = () => {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null);
   const [metricsHistory, setMetricsHistory] = useState<Record<number, Metric[]>>({});
-  const [isConnected, setIsConnected] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [isPolling, setIsPolling] = useState(true);
 
-  // 1. Initial Data Fetch
-  const fetchData = async () => {
+  // Poll monitors & incidents from backend REST API
+  const fetchDashboardData = async () => {
     try {
-      setLoading(true);
       const [monRes, incRes] = await Promise.all([
         fetch('/api/monitors').then((r) => r.json()),
         fetch('/api/incidents').then((r) => r.json()),
@@ -29,11 +26,13 @@ export const App: React.FC = () => {
 
       if (monRes.success && monRes.monitors) {
         setMonitors(monRes.monitors);
+        
+        // Auto-select first monitor if none selected
         if (monRes.monitors.length > 0 && !selectedMonitorId) {
           setSelectedMonitorId(monRes.monitors[0].id);
         }
 
-        // Fetch initial metrics for each monitor
+        // Fetch metrics history for monitors
         for (const mon of monRes.monitors) {
           fetch(`/api/monitors/${mon.id}/metrics?limit=30`)
             .then((r) => r.json())
@@ -52,74 +51,20 @@ export const App: React.FC = () => {
         setIncidents(incRes.incidents);
       }
     } catch (err) {
-      console.error('Failed to load initial data:', err);
-    } finally {
-      setLoading(false);
+      console.error('REST Polling Error:', err);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchDashboardData();
 
-    // 2. Setup Socket.IO connection
-    const socket: Socket = io({
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
-    });
+    // 3-second REST polling interval to update real-time HTTP metrics & uptime
+    const timer = setInterval(() => {
+      fetchDashboardData();
+    }, 3000);
 
-    socket.on('connect', () => {
-      console.log('Socket.IO connected');
-      setIsConnected(true);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('Socket.IO disconnected');
-      setIsConnected(false);
-    });
-
-    // Listen for live metrics pushed from Node backend
-    socket.on(
-      'metric:new',
-      (data: { monitorId: number; metric: Metric; monitor: Monitor }) => {
-        const { monitorId, metric, monitor } = data;
-
-        // Update monitor state
-        setMonitors((prevMonitors) => {
-          const idx = prevMonitors.findIndex((m) => m.id === monitorId);
-          if (idx === -1) {
-            return [monitor, ...prevMonitors];
-          }
-          const updated = [...prevMonitors];
-          updated[idx] = monitor;
-          return updated;
-        });
-
-        // Append metric to history array for live charts
-        setMetricsHistory((prevHistory) => {
-          const existing = prevHistory[monitorId] || [];
-          const updated = [...existing, metric].slice(-50); // Keep latest 50
-          return {
-            ...prevHistory,
-            [monitorId]: updated,
-          };
-        });
-      }
-    );
-
-    socket.on('incident:new', (newIncident: Incident) => {
-      setIncidents((prev) => [newIncident, ...prev]);
-    });
-
-    socket.on('incident:resolved', (resolvedIncident: Incident) => {
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === resolvedIncident.id ? resolvedIncident : i))
-      );
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+    return () => clearInterval(timer);
+  }, [selectedMonitorId]);
 
   const handleAddMonitor = async (
     domain: string,
@@ -133,11 +78,12 @@ export const App: React.FC = () => {
     }).then((r) => r.json());
 
     if (!res.success) {
-      throw new Error(res.error || 'Failed to add monitor');
+      throw new Error(res.error || 'Failed to add domain monitor');
     }
 
     setMonitors((prev) => [res.monitor, ...prev]);
     setSelectedMonitorId(res.monitor.id);
+    fetchDashboardData();
   };
 
   const handleDeleteMonitor = async (id: number) => {
@@ -185,12 +131,12 @@ export const App: React.FC = () => {
       <Header
         monitors={monitors}
         incidents={incidents}
-        isConnected={isConnected}
+        isPolling={isPolling}
         onOpenAddModal={() => setIsAddModalOpen(true)}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 flex-1 w-full space-y-8">
-        {/* Metric KPI Cards Banner */}
+        {/* Metric KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg">
             <div className="flex items-center justify-between text-slate-400 mb-2 text-xs font-medium">
@@ -200,7 +146,7 @@ export const App: React.FC = () => {
             <div className="text-2xl font-black text-white font-mono">
               {monitors.length}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">Active background HTTP ping jobs</div>
+            <div className="text-[11px] text-slate-500 mt-1">Real HTTP website health monitors</div>
           </div>
 
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg">
@@ -231,7 +177,7 @@ export const App: React.FC = () => {
                 size="lg"
               />
             </div>
-            <div className="text-[11px] text-slate-500 mt-2">Dynamic condition evaluator</div>
+            <div className="text-[11px] text-slate-500 mt-2">Dynamic HTTP status condition</div>
           </div>
 
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg">
@@ -242,7 +188,7 @@ export const App: React.FC = () => {
             <div className="text-2xl font-black text-rose-400 font-mono">
               {incidents.filter((i) => i.status === 'OPEN').length}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">Automated threshold triggers</div>
+            <div className="text-[11px] text-slate-500 mt-1">Automated HTTP failure detection</div>
           </div>
         </div>
 
