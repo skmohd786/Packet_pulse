@@ -9,9 +9,10 @@ import { MonitorsTable } from './components/MonitorsTable';
 import { EmptyState } from './components/EmptyState';
 import { Monitor, Metric, Incident } from './types';
 
-// Environment Variable Bindings for Production Deployment (Vercel + Render)
-const API_BASE = import.meta.env.VITE_API_URL || '';
-const WS_URL = import.meta.env.VITE_WS_URL || undefined;
+// Environment Variable Bindings for Production (Vercel + Render) & Local Fallback
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_BASE = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:5000' : '');
+const WS_URL = import.meta.env.VITE_WS_URL || (isLocal ? 'http://localhost:5000' : undefined);
 
 export const App: React.FC = () => {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
