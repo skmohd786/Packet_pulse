@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Production build outputs
+client/dist/
+dist/
+
+# Uploads & temporary files
+server/uploads/*
+!server/uploads/.gitkeep
+*.pcap
+*.pcapng
+*.cap
+
+# Logs & Environment
+*.log
+npm-debug.log*
+.env
+.env.local
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #030712;
+    color: #f3f4f6;
+  }
+}
+
+/* Custom glow and chart animations */
+.glow-green {
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.25);
+}
+
+.glow-yellow {
+  box-shadow: 0 0 15px rgba(234, 179, 8, 0.25);
+}
+
+.glow-red {
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
+}
