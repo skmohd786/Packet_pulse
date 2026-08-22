@@ -1,19 +1,21 @@
 import React from 'react';
-import { Activity, Plus, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Activity, Plus, RefreshCw } from 'lucide-react';
 import { Monitor, Incident } from '../types';
 
 interface HeaderProps {
   monitors: Monitor[];
   incidents: Incident[];
-  isPolling: boolean;
+  isConnected: boolean;
   onOpenAddModal: () => void;
+  onRefresh: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   monitors,
   incidents,
-  isPolling,
+  isConnected,
   onOpenAddModal,
+  onRefresh,
 }) => {
   const activeIncidents = incidents.filter((i) => i.status === 'OPEN');
   const avgUptime =
@@ -24,78 +26,95 @@ export const Header: React.FC<HeaderProps> = ({
         ).toFixed(2)
       : '100.00';
 
-  return (
-    <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
-        {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl shadow-lg shadow-cyan-500/20">
-            <Activity className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black tracking-tight text-white font-mono">
-                Packet<span className="text-cyan-400">Pulse</span>
-              </h1>
-              <span className="text-xs px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 font-mono border border-cyan-500/20">
-                Checkpoint 2
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">Real HTTP Website Monitoring & PostgreSQL Metrics</p>
-          </div>
-        </div>
+  const hasCritical = monitors.some((m) => m.status === 'CRITICAL');
+  const hasWarning = monitors.some((m) => m.status === 'WARNING');
+  const systemStatus = hasCritical ? 'CRITICAL' : hasWarning ? 'WARNING' : 'HEALTHY';
 
-        {/* System Stats Bar */}
-        <div className="flex items-center gap-6 bg-slate-950/60 px-4 py-2 rounded-xl border border-slate-800 text-xs">
+  return (
+    <header className="bg-zinc-900/90 border-b border-zinc-800 sticky top-0 z-40">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
+        {/* Brand & Monitored Status */}
+        <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <RefreshCw className={`w-3.5 h-3.5 ${isPolling ? 'text-emerald-400 animate-spin' : 'text-slate-500'}`} />
-            <span className="text-slate-400">REST Polling:</span>
-            <span className={isPolling ? 'text-emerald-400 font-semibold font-mono' : 'text-slate-400 font-semibold'}>
-              ACTIVE (3s)
+            <div className="p-1.5 bg-zinc-800 rounded border border-zinc-700">
+              <Activity className="w-4 h-4 text-emerald-400" />
+            </div>
+            <span className="text-sm font-bold text-white font-mono tracking-tight">
+              PacketPulse<span className="text-zinc-500 text-xs font-normal">/observability</span>
             </span>
           </div>
 
-          <div className="w-px h-4 bg-slate-800" />
-
-          <div>
-            <span className="text-slate-400">Monitors: </span>
-            <span className="text-white font-bold">{monitors.length}</span>
-          </div>
-
-          <div className="w-px h-4 bg-slate-800" />
-
-          <div>
-            <span className="text-slate-400">Uptime: </span>
-            <span className="text-emerald-400 font-bold font-mono">{avgUptime}%</span>
-          </div>
-
-          <div className="w-px h-4 bg-slate-800" />
-
-          <div className="flex items-center gap-1.5">
-            {activeIncidents.length > 0 ? (
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-            ) : (
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            )}
-            <span className="text-slate-400">Incidents: </span>
+          <div className="hidden md:flex items-center gap-2 text-xs font-mono border-l border-zinc-800 pl-4">
+            <span className="text-zinc-500">Status:</span>
             <span
-              className={`font-bold font-mono ${
-                activeIncidents.length > 0 ? 'text-rose-400' : 'text-slate-300'
+              className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                systemStatus === 'CRITICAL'
+                  ? 'bg-rose-950/60 text-rose-400 border border-rose-800/60'
+                  : systemStatus === 'WARNING'
+                  ? 'bg-amber-950/60 text-amber-400 border border-amber-800/60'
+                  : 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/60'
               }`}
             >
-              {activeIncidents.length}
+              {systemStatus}
             </span>
           </div>
         </div>
 
-        {/* Action Button */}
-        <button
-          onClick={onOpenAddModal}
-          className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-lg shadow-cyan-500/25 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Domain</span>
-        </button>
+        {/* Status Bar */}
+        <div className="flex items-center gap-4 text-xs font-mono text-zinc-400">
+          {/* WebSocket indicator */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-950 rounded border border-zinc-800">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isConnected ? 'bg-emerald-500' : 'bg-rose-500'
+              }`}
+            />
+            <span className="text-[11px] text-zinc-300">
+              {isConnected ? 'WS LIVE' : 'WS DISCONNECTED'}
+            </span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-3 bg-zinc-950 px-3 py-1 rounded border border-zinc-800 text-[11px]">
+            <div>
+              <span className="text-zinc-500">Targets: </span>
+              <span className="text-zinc-200 font-bold">{monitors.length}</span>
+            </div>
+            <div className="w-px h-3 bg-zinc-800" />
+            <div>
+              <span className="text-zinc-500">Avg Uptime: </span>
+              <span className="text-emerald-400 font-bold">{avgUptime}%</span>
+            </div>
+            <div className="w-px h-3 bg-zinc-800" />
+            <div>
+              <span className="text-zinc-500">Incidents: </span>
+              <span
+                className={`font-bold ${
+                  activeIncidents.length > 0 ? 'text-rose-400' : 'text-zinc-300'
+                }`}
+              >
+                {activeIncidents.length}
+              </span>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onRefresh}
+              className="p-1.5 text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded border border-zinc-700 transition"
+              title="Refresh Monitoring Data"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={onOpenAddModal}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded text-xs font-mono font-medium transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Target</span>
+            </button>
+          </div>
+        </div>
       </div>
     </header>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, CheckCircle2, Clock, ShieldAlert } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { Incident } from '../types';
 
 interface IncidentsListProps {
@@ -9,29 +9,26 @@ interface IncidentsListProps {
 
 export const IncidentsList: React.FC<IncidentsListProps> = ({ incidents, onResolve }) => {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-white flex items-center gap-2">
-          <ShieldAlert className="w-5 h-5 text-rose-400" />
-          Incident Log & Dashboard Alerts
-        </h3>
-        <span className="text-xs text-slate-400 font-mono">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+      <div className="flex items-center justify-between mb-3.5">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-rose-400" />
+          <h3 className="text-sm font-mono font-bold text-white">Incident Log</h3>
+        </div>
+        <span className="text-xs font-mono text-zinc-500">
           Total: {incidents.length}
         </span>
       </div>
 
       {incidents.length === 0 ? (
-        <div className="text-center py-8 text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl">
-          <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mx-auto mb-2" />
-          No operational incidents detected. All system monitors healthy.
+        <div className="text-center py-6 text-zinc-500 font-mono text-xs border border-dashed border-zinc-800 rounded">
+          No active incidents logged. All target monitors healthy.
         </div>
       ) : (
-        <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+        <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
           {incidents.map((incident) => {
             const isOpen = incident.status === 'OPEN';
-            const startTime = new Date(incident.started_at).toLocaleString([], {
-              month: 'short',
-              day: 'numeric',
+            const startTime = new Date(incident.started_at).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit',
@@ -40,48 +37,41 @@ export const IncidentsList: React.FC<IncidentsListProps> = ({ incidents, onResol
             return (
               <div
                 key={incident.id}
-                className={`p-4 rounded-xl border transition-all ${
+                className={`p-3 rounded border text-xs font-mono transition-all ${
                   isOpen
-                    ? 'bg-rose-500/5 border-rose-500/30'
-                    : 'bg-slate-950/60 border-slate-800'
+                    ? 'bg-rose-950/20 border-rose-800/60'
+                    : 'bg-zinc-950 border-zinc-800'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`p-2 rounded-lg mt-0.5 ${
-                        isOpen
-                          ? 'bg-rose-500/20 text-rose-400'
-                          : 'bg-emerald-500/20 text-emerald-400'
-                      }`}
-                    >
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5">
                       {isOpen ? (
-                        <AlertCircle className="w-4 h-4" />
+                        <AlertCircle className="w-4 h-4 text-rose-400" />
                       ) : (
-                        <CheckCircle2 className="w-4 h-4" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       )}
                     </div>
 
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-white">
+                        <span className="font-bold text-zinc-200">
                           {incident.title}
-                        </h4>
+                        </span>
                         <span
-                          className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
                             isOpen
-                              ? 'bg-rose-500/20 text-rose-400'
-                              : 'bg-emerald-500/20 text-emerald-400'
+                              ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                              : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
                           }`}
                         >
-                          {incident.status}
+                          {incident.severity}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">
+                      <p className="text-[11px] text-zinc-400 mt-1">
                         {incident.details}
                       </p>
-                      <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500 font-mono">
-                        <Clock className="w-3 h-3 text-slate-500" />
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px] text-zinc-500">
                         <span>Started: {startTime}</span>
                         {incident.resolved_at && (
                           <>
@@ -98,7 +88,7 @@ export const IncidentsList: React.FC<IncidentsListProps> = ({ incidents, onResol
                   {isOpen && (
                     <button
                       onClick={() => onResolve(incident.id)}
-                      className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-semibold transition"
+                      className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800 rounded text-[11px] font-medium transition"
                     >
                       Resolve
                     </button>

@@ -8,8 +8,9 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { Activity, Clock } from 'lucide-react';
+import { Activity, Clock, Globe, Zap } from 'lucide-react';
 import { Metric, Monitor } from '../types';
+import { StatusBadge } from './StatusBadge';
 
 interface LiveChartProps {
   monitor: Monitor | null;
@@ -19,8 +20,10 @@ interface LiveChartProps {
 export const LiveChart: React.FC<LiveChartProps> = ({ monitor, metrics }) => {
   if (!monitor) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-500">
-        Select a monitor to view live response time telemetry.
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
+        <Globe className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
+        <h4 className="text-sm font-mono font-medium text-zinc-400">No Target Selected</h4>
+        <p className="text-xs text-zinc-600 mt-1">Select a monitor below or add a new domain to start tracing live response time.</p>
       </div>
     );
   }
@@ -40,102 +43,128 @@ export const LiveChart: React.FC<LiveChartProps> = ({ monitor, metrics }) => {
     };
   });
 
-  const latestLatency = monitor.last_response_time_ms ?? 0;
+  const latencies = metrics.map((m) => m.response_time_ms);
+  const currentLatency = monitor.last_response_time_ms ?? 0;
+  const minLatency = latencies.length > 0 ? Math.min(...latencies) : currentLatency;
+  const maxLatency = latencies.length > 0 ? Math.max(...latencies) : currentLatency;
+  const avgLatency =
+    latencies.length > 0
+      ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+      : currentLatency;
+
+  const lastChecked = monitor.updated_at
+    ? new Date(monitor.updated_at).toLocaleTimeString()
+    : 'Just now';
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Activity className="w-5 h-5 text-cyan-400" />
-              Live Response-Time Telemetry
-            </h3>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 font-mono border border-cyan-500/20">
-              {monitor.domain}
-            </span>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+      {/* Top Header Information Area */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-zinc-800">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-zinc-950 rounded border border-zinc-800">
+            <Zap className="w-5 h-5 text-emerald-400" />
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">Real-time HTTP latency stream over WebSockets</p>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h3 className="text-base font-mono font-bold text-white">
+                {monitor.domain}
+              </h3>
+              <StatusBadge status={monitor.status} size="sm" />
+            </div>
+            <div className="flex items-center gap-3 text-xs font-mono text-zinc-500 mt-1">
+              <span>Target: <span className="text-zinc-300">{monitor.url}</span></span>
+              <span>•</span>
+              <span>Interval: <span className="text-zinc-300">{monitor.check_interval_seconds}s</span></span>
+              <span>•</span>
+              <span>Last Checked: <span className="text-zinc-300">{lastChecked}</span></span>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4 bg-slate-950/80 px-4 py-2 rounded-xl border border-slate-800 font-mono text-xs">
+        {/* Latency Quick Stats Pill Strip */}
+        <div className="grid grid-cols-4 gap-3 bg-zinc-950 px-3.5 py-2 rounded border border-zinc-800 text-xs font-mono">
           <div>
-            <span className="text-slate-400">Current Ping: </span>
-            <span className="text-cyan-400 font-bold">{latestLatency} ms</span>
+            <div className="text-[10px] text-zinc-500 uppercase">Current</div>
+            <div className="text-sm font-bold text-emerald-400">{currentLatency} ms</div>
           </div>
-          <div className="w-px h-3.5 bg-slate-800" />
           <div>
-            <span className="text-slate-400">HTTP Status: </span>
-            <span
-              className={`font-bold ${
-                monitor.last_status_code === 200
-                  ? 'text-emerald-400'
-                  : 'text-rose-400'
-              }`}
-            >
-              {monitor.last_status_code ?? 'Err'}
-            </span>
+            <div className="text-[10px] text-zinc-500 uppercase">Min</div>
+            <div className="text-sm font-bold text-zinc-300">{minLatency} ms</div>
           </div>
-          <div className="w-px h-3.5 bg-slate-800" />
           <div>
-            <span className="text-slate-400">Uptime: </span>
-            <span className="text-emerald-400 font-bold">
-              {monitor.uptime_percentage}%
-            </span>
+            <div className="text-[10px] text-zinc-500 uppercase">Avg</div>
+            <div className="text-sm font-bold text-zinc-300">{avgLatency} ms</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase">Max</div>
+            <div className="text-sm font-bold text-zinc-400">{maxLatency} ms</div>
           </div>
         </div>
       </div>
 
-      <div className="h-64 w-full">
-        {chartData.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-slate-500 text-xs">
-            Awaiting first ping telemetry cycle...
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="latencyGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis
-                dataKey="time"
-                stroke="#64748b"
-                tick={{ fill: '#64748b', fontSize: 10 }}
-                tickLine={false}
-              />
-              <YAxis
-                stroke="#64748b"
-                tick={{ fill: '#64748b', fontSize: 10 }}
-                tickLine={false}
-                unit="ms"
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#090d16',
-                  borderColor: '#1e293b',
-                  borderRadius: '0.75rem',
-                  fontSize: '12px',
-                  color: '#f8fafc',
-                  fontFamily: 'JetBrains Mono',
-                }}
-                formatter={(val: any) => [`${val} ms`, 'Response Time']}
-              />
-              <Area
-                type="monotone"
-                dataKey="latency"
-                stroke="#06b6d4"
-                strokeWidth={2.5}
-                fillOpacity={1}
-                fill="url(#latencyGradient)"
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
+      {/* Main Response Time Telemetry Graph */}
+      <div className="pt-5">
+        <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mb-3">
+          <span className="flex items-center gap-1.5 text-zinc-300">
+            <Activity className="w-4 h-4 text-emerald-400" />
+            Response Time (ms) — Real-Time Trace Stream
+          </span>
+          <span className="text-[11px] text-zinc-500">
+            HTTP Status: <span className="text-emerald-400 font-bold">{monitor.last_status_code ?? '200'}</span> | Uptime: <span className="text-emerald-400 font-bold">{monitor.uptime_percentage}%</span>
+          </span>
+        </div>
+
+        <div className="h-64 w-full">
+          {chartData.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-zinc-600 font-mono text-xs">
+              Awaiting telemetry sample stream...
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="latencyGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="2 2" stroke="#27272a" vertical={false} />
+                <XAxis
+                  dataKey="time"
+                  stroke="#52525b"
+                  tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  stroke="#52525b"
+                  tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                  tickLine={false}
+                  unit="ms"
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#09090b',
+                    borderColor: '#27272a',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    color: '#f4f4f5',
+                    fontFamily: 'JetBrains Mono',
+                  }}
+                  formatter={(val: any) => [`${val} ms`, 'Response Time']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="latency"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#latencyGradient)"
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
     </div>
   );
