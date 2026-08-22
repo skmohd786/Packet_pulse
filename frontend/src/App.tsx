@@ -1,26 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Activity, ShieldCheck, AlertTriangle, Cpu, Radio, Globe } from 'lucide-react';
 import { Header } from './components/Header';
 import { AddMonitorModal } from './components/AddMonitorModal';
 import { LiveChart } from './components/LiveChart';
 import { IncidentsList } from './components/IncidentsList';
 import { MonitorsTable } from './components/MonitorsTable';
-import { StatusBadge } from './components/StatusBadge';
 import { EmptyState } from './components/EmptyState';
 import { Monitor, Metric, Incident } from './types';
 
 export const App: React.FC = () => {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null);
+  const [selectedMonitorId, setSelectedMonitorId] = useState<string | number | null>(null);
   const [selectedRange, setSelectedRange] = useState<string>('15m');
-  const [metricsHistory, setMetricsHistory] = useState<Record<number, Metric[]>>({});
-  const [isConnected, setIsConnected] = useState(false);
+  const [metricsHistory, setMetricsHistory] = useState<Record<string, Metric[]>>({});
+  const [wsStatus, setWsStatus] = useState<'Connected' | 'Reconnecting' | 'Disconnected'>('Disconnected');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Initial REST fetch to seed current telemetry state
+  // Fetch initial monitors and incidents
   const fetchData = async () => {
     try {
       const [monRes, incRes] = await Promise.all([
@@ -31,7 +29,8 @@ export const App: React.FC = () => {
       if (monRes.success && monRes.monitors) {
         setMonitors(monRes.monitors);
         if (monRes.monitors.length > 0 && !selectedMonitorId) {
-          setSelectedMonitorId(monRes.monitors[0].id);
+          const firstId = monRes.monitors[0].id || monRes.monitors[0]._id;
+          setSelectedMonitorId(firstId);
         }
       }
 
@@ -39,20 +38,20 @@ export const App: React.FC = () => {
         setIncidents(incRes.incidents);
       }
     } catch (err) {
-      console.error('Failed to load initial data:', err);
+      console.error('Failed to load initial telemetry data:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch metrics history for selected monitor and range
-  const fetchMetricsForMonitor = async (monitorId: number, range: string) => {
+  // Fetch metrics history for selected monitor and time range
+  const fetchMetricsForMonitor = async (monitorId: string | number, range: string) => {
     try {
       const res = await fetch(`/api/monitors/${monitorId}/metrics?range=${range}&limit=100`).then((r) => r.json());
       if (res.success && res.metrics) {
         setMetricsHistory((prev) => ({
           ...prev,
-          [monitorId]: res.metrics,
+          [String(monitorId)]: res.metrics,
         }));
       }
     } catch (err) {
@@ -63,30 +62,43 @@ export const App: React.FC = () => {
   useEffect(() => {
     fetchData();
 
-    // Socket.IO WebSocket telemetry connection
+    // Socket.IO Real-Time Telemetry Connection
+    // Architecture: Monitoring Engine -> New Metric -> Node.js Backend -> Socket.IO/WebSocket -> React Dashboard
     const socket: Socket = io({
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1000,
     });
 
     socket.on('connect', () => {
-      console.log('Socket.IO connected');
-      setIsConnected(true);
+      console.log('Socket.IO WebSocket connected');
+      setWsStatus('Connected');
     });
 
     socket.on('disconnect', () => {
-      console.log('Socket.IO disconnected');
-      setIsConnected(false);
+      console.log('Socket.IO WebSocket disconnected');
+      setWsStatus('Disconnected');
     });
 
-    // Listen for live real-time metrics pushed from Node backend
+    socket.io.on('reconnect_attempt', () => {
+      setWsStatus('Reconnecting');
+    });
+
+    socket.io.on('reconnect_failed', () => {
+      setWsStatus('Disconnected');
+    });
+
+    // Receive live real-time metrics pushed from Node backend
     socket.on(
       'metric:new',
-      (data: { monitorId: number; metric: Metric; monitor: Monitor }) => {
+      (data: { monitorId: string | number; metric: Metric; monitor: Monitor }) => {
         const { monitorId, metric, monitor } = data;
+        const targetId = String(monitorId || monitor.id || monitor._id);
 
         setMonitors((prevMonitors) => {
-          const idx = prevMonitors.findIndex((m) => m.id === monitorId);
+          const idx = prevMonitors.findIndex(
+            (m) => String(m.id || m._id) === targetId
+          );
           if (idx === -1) {
             return [monitor, ...prevMonitors];
           }
@@ -95,13 +107,13 @@ export const App: React.FC = () => {
           return updated;
         });
 
-        // Append live metric into active dataset
+        // Feed real live metric into current metrics history for charts
         setMetricsHistory((prevHistory) => {
-          const existing = prevHistory[monitorId] || [];
+          const existing = prevHistory[targetId] || [];
           const updated = [...existing, metric].slice(-100);
           return {
             ...prevHistory,
-            [monitorId]: updated,
+            [targetId]: updated,
           };
         });
       }
@@ -112,14 +124,16 @@ export const App: React.FC = () => {
     });
 
     socket.on('incident:update', (updatedIncident: Incident) => {
+      const incId = String(updatedIncident.id || updatedIncident._id);
       setIncidents((prev) =>
-        prev.map((i) => (i.id === updatedIncident.id ? updatedIncident : i))
+        prev.map((i) => (String(i.id || i._id) === incId ? updatedIncident : i))
       );
     });
 
     socket.on('incident:resolved', (resolvedIncident: Incident) => {
+      const incId = String(resolvedIncident.id || resolvedIncident._id);
       setIncidents((prev) =>
-        prev.map((i) => (i.id === resolvedIncident.id ? resolvedIncident : i))
+        prev.map((i) => (String(i.id || i._id) === incId ? resolvedIncident : i))
       );
     });
 
@@ -151,50 +165,61 @@ export const App: React.FC = () => {
     }
 
     setMonitors((prev) => [res.monitor, ...prev]);
-    setSelectedMonitorId(res.monitor.id);
+    const newId = res.monitor.id || res.monitor._id;
+    setSelectedMonitorId(newId);
   };
 
-  const handleDeleteMonitor = async (id: number) => {
+  const handleDeleteMonitor = async (id: string | number) => {
     const res = await fetch(`/api/monitors/${id}`, { method: 'DELETE' }).then(
       (r) => r.json()
     );
 
     if (res.success) {
-      setMonitors((prev) => prev.filter((m) => m.id !== id));
-      if (selectedMonitorId === id) {
-        const remaining = monitors.filter((m) => m.id !== id);
-        setSelectedMonitorId(remaining.length > 0 ? remaining[0].id : null);
+      setMonitors((prev) =>
+        prev.filter((m) => String(m.id || m._id) !== String(id))
+      );
+      if (String(selectedMonitorId) === String(id)) {
+        const remaining = monitors.filter((m) => String(m.id || m._id) !== String(id));
+        setSelectedMonitorId(
+          remaining.length > 0 ? remaining[0].id || remaining[0]._id! : null
+        );
       }
     }
   };
 
-  const handleResolveIncident = async (id: number) => {
+  const handleResolveIncident = async (id: string | number) => {
     const res = await fetch(`/api/incidents/${id}/resolve`, {
       method: 'POST',
     }).then((r) => r.json());
 
     if (res.success && res.incident) {
+      const resId = String(res.incident.id || res.incident._id);
       setIncidents((prev) =>
-        prev.map((i) => (i.id === id ? res.incident : i))
+        prev.map((i) => (String(i.id || i._id) === resId ? res.incident : i))
       );
     }
   };
 
   const selectedMonitor =
-    monitors.find((m) => m.id === selectedMonitorId) || (monitors[0] ?? null);
-  const currentMetrics = selectedMonitorId ? metricsHistory[selectedMonitorId] || [] : [];
+    monitors.find((m) => String(m.id || m._id) === String(selectedMonitorId)) ||
+    (monitors[0] ?? null);
+
+  const activeMetricsKey = selectedMonitor
+    ? String(selectedMonitor.id || selectedMonitor._id)
+    : '';
+  const currentMetrics = activeMetricsKey ? metricsHistory[activeMetricsKey] || [] : [];
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans pb-10">
       <Header
         monitors={monitors}
         incidents={incidents}
-        isConnected={isConnected}
+        wsStatus={wsStatus}
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onRefresh={fetchData}
       />
 
-      {!isConnected && (
+      {wsStatus === 'Disconnected' && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 w-full">
           <EmptyState type="disconnected" onAction={fetchData} />
         </div>
@@ -205,7 +230,7 @@ export const App: React.FC = () => {
           <EmptyState type="no-targets" onAction={() => setIsAddModalOpen(true)} />
         ) : (
           <>
-            {/* Primary Visual Element: Response-Time Telemetry & Historical Metrics Chart */}
+            {/* Primary Visual Element: Response Time & Historical Metrics Chart */}
             <LiveChart
               monitor={selectedMonitor}
               metrics={currentMetrics}

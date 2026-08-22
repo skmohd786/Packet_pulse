@@ -6,8 +6,7 @@ import {
     dbCalculateUptime,
     dbGetOpenIncidentForMonitor,
     dbInsertIncident,
-    dbResolveIncident,
-    pool
+    dbResolveIncident
 } from '../db';
 import { performHealthCheck } from './healthChecker';
 

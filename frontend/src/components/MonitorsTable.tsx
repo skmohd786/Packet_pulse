@@ -1,13 +1,13 @@
 import React from 'react';
-import { ExternalLink, Trash2, Globe, Radio } from 'lucide-react';
+import { ExternalLink, Trash2, Globe } from 'lucide-react';
 import { Monitor } from '../types';
 import { StatusBadge } from './StatusBadge';
 
 interface MonitorsTableProps {
   monitors: Monitor[];
-  selectedMonitorId: number | null;
-  onSelectMonitor: (id: number) => void;
-  onDeleteMonitor: (id: number) => Promise<void>;
+  selectedMonitorId: string | number | null;
+  onSelectMonitor: (id: string | number) => void;
+  onDeleteMonitor: (id: string | number) => Promise<void>;
 }
 
 export const MonitorsTable: React.FC<MonitorsTableProps> = ({
@@ -49,11 +49,17 @@ export const MonitorsTable: React.FC<MonitorsTableProps> = ({
               </tr>
             ) : (
               monitors.map((m) => {
-                const isSelected = m.id === selectedMonitorId;
+                const monId = m.id || m._id || '';
+                const isSelected = String(monId) === String(selectedMonitorId);
+                const statusCode = m.last_status_code ?? m.lastStatusCode ?? null;
+                const responseTime = m.last_response_time_ms ?? m.lastResponseTime ?? null;
+                const uptime = m.uptime_percentage ?? m.uptime ?? 100;
+                const interval = m.check_interval_seconds ?? m.interval ?? 5;
+
                 return (
                   <tr
-                    key={m.id}
-                    onClick={() => onSelectMonitor(m.id)}
+                    key={String(monId)}
+                    onClick={() => onSelectMonitor(monId)}
                     className={`cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-zinc-950 border-l-2 border-emerald-500'
@@ -76,7 +82,7 @@ export const MonitorsTable: React.FC<MonitorsTableProps> = ({
                         </a>
                       </div>
                       <div className="text-[10px] text-zinc-500 mt-0.5">
-                        Interval: {m.check_interval_seconds}s
+                        Interval: {interval}s
                       </div>
                     </td>
 
@@ -87,33 +93,33 @@ export const MonitorsTable: React.FC<MonitorsTableProps> = ({
                     <td className="py-3 px-3 font-semibold">
                       <span
                         className={
-                          m.last_status_code && m.last_status_code < 400
+                          statusCode && statusCode < 400
                             ? 'text-emerald-400'
                             : 'text-rose-400'
                         }
                       >
-                        {m.last_status_code ? `HTTP ${m.last_status_code}` : 'N/A'}
+                        {statusCode ? `HTTP ${statusCode}` : 'N/A'}
                       </span>
                     </td>
 
                     <td className="py-3 px-3 text-zinc-300">
-                      {m.last_response_time_ms != null ? `${m.last_response_time_ms} ms` : '—'}
+                      {responseTime != null ? `${responseTime} ms` : '—'}
                     </td>
 
                     <td className="py-3 px-3 font-bold text-emerald-400">
-                      {m.uptime_percentage}%
+                      {uptime}%
                     </td>
 
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
-                          onClick={() => onSelectMonitor(m.id)}
+                          onClick={() => onSelectMonitor(monId)}
                           className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-[10px] transition"
                         >
                           Inspect
                         </button>
                         <button
-                          onClick={() => onDeleteMonitor(m.id)}
+                          onClick={() => onDeleteMonitor(monId)}
                           className="p-1 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 rounded border border-rose-900/60 transition"
                           title="Delete Target"
                         >

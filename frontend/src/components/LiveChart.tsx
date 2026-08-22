@@ -36,22 +36,26 @@ export const LiveChart: React.FC<LiveChartProps> = ({
   }
 
   const chartData = metrics.map((m) => {
-    const d = new Date(m.created_at);
+    const timeVal = m.timestamp || m.created_at;
+    const d = new Date(timeVal);
     const time = ['6h', '24h'].includes(selectedRange)
       ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+    const latency = m.responseTime ?? m.response_time_ms ?? 0;
+    const statusCode = m.httpStatus ?? m.status_code ?? 0;
+
     return {
       time,
-      latency: m.response_time_ms,
-      statusCode: m.status_code || 0,
-      isUp: m.is_up,
+      latency,
+      statusCode,
+      isUp: m.isUp ?? m.is_up ?? true,
       status: m.status,
     };
   });
 
-  const latencies = metrics.map((m) => m.response_time_ms);
-  const currentLatency = monitor.last_response_time_ms ?? 0;
+  const latencies = metrics.map((m) => m.responseTime ?? m.response_time_ms ?? 0);
+  const currentLatency = monitor.lastResponseTime ?? monitor.last_response_time_ms ?? 0;
   const minLatency = latencies.length > 0 ? Math.min(...latencies) : currentLatency;
   const maxLatency = latencies.length > 0 ? Math.max(...latencies) : currentLatency;
   const avgLatency =
@@ -59,9 +63,14 @@ export const LiveChart: React.FC<LiveChartProps> = ({
       ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
       : currentLatency;
 
-  const lastChecked = monitor.updated_at
-    ? new Date(monitor.updated_at).toLocaleTimeString()
+  const updatedTime = monitor.updatedAt || monitor.updated_at;
+  const lastChecked = updatedTime
+    ? new Date(updatedTime).toLocaleTimeString()
     : 'Just now';
+
+  const statusCode = monitor.lastStatusCode ?? monitor.last_status_code ?? 200;
+  const uptime = monitor.uptime ?? monitor.uptime_percentage ?? 100;
+  const interval = monitor.interval ?? monitor.check_interval_seconds ?? 5;
 
   const ranges = ['15m', '1h', '6h', '24h'];
 
@@ -83,7 +92,7 @@ export const LiveChart: React.FC<LiveChartProps> = ({
             <div className="flex items-center gap-3 text-xs font-mono text-zinc-500 mt-1">
               <span>Target: <span className="text-zinc-300">{monitor.url}</span></span>
               <span>•</span>
-              <span>Interval: <span className="text-zinc-300">{monitor.check_interval_seconds}s</span></span>
+              <span>Interval: <span className="text-zinc-300">{interval}s</span></span>
               <span>•</span>
               <span>Last Checked: <span className="text-zinc-300">{lastChecked}</span></span>
             </div>
@@ -116,7 +125,7 @@ export const LiveChart: React.FC<LiveChartProps> = ({
         <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mb-3 flex-wrap gap-2">
           <span className="flex items-center gap-1.5 text-zinc-300">
             <Activity className="w-4 h-4 text-emerald-400" />
-            Response Time (ms) — Real & Historical Metrics ({selectedRange})
+            Response Time (ms) — Live Telemetry & MongoDB Metrics ({selectedRange})
           </span>
 
           {/* Time Range Selector */}

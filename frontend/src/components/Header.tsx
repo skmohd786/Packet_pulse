@@ -5,7 +5,7 @@ import { Monitor, Incident } from '../types';
 interface HeaderProps {
   monitors: Monitor[];
   incidents: Incident[];
-  isConnected: boolean;
+  wsStatus: 'Connected' | 'Reconnecting' | 'Disconnected';
   onOpenAddModal: () => void;
   onRefresh: () => void;
 }
@@ -13,15 +13,15 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   monitors,
   incidents,
-  isConnected,
+  wsStatus,
   onOpenAddModal,
   onRefresh,
 }) => {
-  const activeIncidents = incidents.filter((i) => i.status === 'OPEN');
+  const activeIncidents = incidents.filter((i) => (i.resolvedStatus || i.status) === 'OPEN');
   const avgUptime =
     monitors.length > 0
       ? (
-          monitors.reduce((acc, m) => acc + (m.uptime_percentage || 100), 0) /
+          monitors.reduce((acc, m) => acc + (m.uptime_percentage ?? m.uptime ?? 100), 0) /
           monitors.length
         ).toFixed(2)
       : '100.00';
@@ -29,6 +29,16 @@ export const Header: React.FC<HeaderProps> = ({
   const hasCritical = monitors.some((m) => m.status === 'CRITICAL');
   const hasWarning = monitors.some((m) => m.status === 'WARNING');
   const systemStatus = hasCritical ? 'CRITICAL' : hasWarning ? 'WARNING' : 'HEALTHY';
+
+  let wsDotColor = 'bg-emerald-500';
+  let wsTextColor = 'text-emerald-400';
+  if (wsStatus === 'Reconnecting') {
+    wsDotColor = 'bg-amber-500 animate-ping';
+    wsTextColor = 'text-amber-400';
+  } else if (wsStatus === 'Disconnected') {
+    wsDotColor = 'bg-rose-500';
+    wsTextColor = 'text-rose-400';
+  }
 
   return (
     <header className="bg-zinc-900/90 border-b border-zinc-800 sticky top-0 z-40">
@@ -62,15 +72,11 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Status Bar */}
         <div className="flex items-center gap-4 text-xs font-mono text-zinc-400">
-          {/* WebSocket indicator */}
+          {/* WebSocket Status Indicator */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-950 rounded border border-zinc-800">
-            <span
-              className={`h-2 w-2 rounded-full ${
-                isConnected ? 'bg-emerald-500' : 'bg-rose-500'
-              }`}
-            />
-            <span className="text-[11px] text-zinc-300">
-              {isConnected ? 'WS LIVE' : 'WS DISCONNECTED'}
+            <span className={`h-2 w-2 rounded-full ${wsDotColor}`} />
+            <span className={`text-[11px] font-bold uppercase ${wsTextColor}`}>
+              WS {wsStatus}
             </span>
           </div>
 
