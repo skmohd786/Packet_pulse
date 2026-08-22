@@ -1,311 +1,389 @@
-import { Pool } from 'pg';
+import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { MonitorModel, IMonitor } from './models/Monitor';
+import { MetricModel, IMetric } from './models/Metric';
+import { IncidentModel, IIncident } from './models/Incident';
 import { Monitor, Metric, Incident } from './types';
 
 dotenv.config();
 
-let usePg = false;
+let useMongo = false;
 
-export const pool = new Pool({
-    host: process.env.PGHOST || 'localhost',
-    port: parseInt(process.env.PGPORT || '5432'),
-    user: process.env.PGUSER || 'postgres',
-    password: process.env.PGPASSWORD || 'postgres',
-    database: process.env.PGDATABASE || 'packetpulse',
-    connectionTimeoutMillis: 2000,
-});
-
-// In-Memory Fallback State (used seamlessly if PostgreSQL server is not running locally)
+// Fallback In-Memory Document Store (used if MongoDB server is offline)
 const memoryStore = {
-    monitors: [] as Monitor[],
-    metrics: [] as Metric[],
-    incidents: [] as Incident[],
-    monitorIdCounter: 1,
-    metricIdCounter: 1,
-    incidentIdCounter: 1,
+    monitors: [] as any[],
+    metrics: [] as any[],
+    incidents: [] as any[],
+    counter: 1,
 };
 
 export async function initDb() {
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/packetpulse';
     try {
-        const client = await pool.connect();
-        console.log('Successfully connected to PostgreSQL database!');
-        
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS monitors (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                domain VARCHAR(255) NOT NULL UNIQUE,
-                url VARCHAR(500) NOT NULL,
-                check_interval_seconds INT NOT NULL DEFAULT 5,
-                status VARCHAR(50) NOT NULL DEFAULT 'HEALTHY',
-                last_status_code INT,
-                last_response_time_ms INT,
-                uptime_percentage NUMERIC(5, 2) DEFAULT 100.00,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS metrics (
-                id SERIAL PRIMARY KEY,
-                monitor_id INT REFERENCES monitors(id) ON DELETE CASCADE,
-                status_code INT,
-                response_time_ms INT NOT NULL,
-                status VARCHAR(50) NOT NULL,
-                dns_time_ms INT DEFAULT 0,
-                is_up BOOLEAN NOT NULL DEFAULT true,
-                error_message TEXT,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS incidents (
-                id SERIAL PRIMARY KEY,
-                monitor_id INT REFERENCES monitors(id) ON DELETE CASCADE,
-                title VARCHAR(255) NOT NULL,
-                severity VARCHAR(50) NOT NULL,
-                status VARCHAR(50) NOT NULL DEFAULT 'OPEN',
-                details TEXT,
-                started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                resolved_at TIMESTAMP WITH TIME ZONE
-            );
-        `);
-        
-        client.release();
-        usePg = true;
-        console.log('PostgreSQL schema initialized.');
+        await mongoose.connect(mongoUri, {
+            serverSelectionTimeoutMS: 2500,
+        });
+        useMongo = true;
+        console.log(`Successfully connected to MongoDB database at ${mongoUri}`);
     } catch (err: any) {
-        console.warn('PostgreSQL connection warning:', err.message);
-        console.warn('Using in-memory SQL state fallback for PacketPulse MVP database operations.');
-        usePg = false;
+        console.warn('MongoDB connection warning:', err.message);
+        console.warn('Using in-memory MongoDB document store fallback for PacketPulse operations.');
+        useMongo = false;
 
-        // Populate initial default monitors in memory for out-of-the-box demo
+        // Seed initial demo monitors in memory if empty
         if (memoryStore.monitors.length === 0) {
-            dbInsertMonitor('Example Website', 'example.com', 'https://example.com', 5);
-            dbInsertMonitor('Google', 'google.com', 'https://google.com', 5);
-            dbInsertMonitor('HTTPStat Test 500', 'httpstat.us/500', 'https://httpstat.us/500', 5);
+            await dbInsertMonitor('Example Website', 'example.com', 'https://example.com', 5);
+            await dbInsertMonitor('Google', 'google.com', 'https://google.com', 5);
+            await dbInsertMonitor('HTTPStat Test 500', 'httpstat.us/500', 'https://httpstat.us/500', 5);
         }
     }
 }
 
-export async function dbGetMonitors(): Promise<Monitor[]> {
-    if (usePg) {
-        const res = await pool.query('SELECT * FROM monitors ORDER BY id DESC');
-        return res.rows.map(r => ({
-            ...r,
-            uptime_percentage: parseFloat(r.uptime_percentage || '100')
-        }));
-    }
-    return memoryStore.monitors;
+function mapMonitorDoc(doc: any): Monitor {
+    const obj = doc.toObject ? doc.toObject() : doc;
+    const id = obj._id ? obj._id.toString() : String(obj.id || obj._id);
+    return {
+        id,
+        _id: id,
+        name: obj.name,
+        domain: obj.domain,
+        url: obj.url,
+        check_interval_seconds: obj.interval || 5,
+        interval: obj.interval || 5,
+        status: obj.status || 'HEALTHY',
+        last_status_code: obj.lastStatusCode ?? null,
+        lastStatusCode: obj.lastStatusCode ?? null,
+        last_response_time_ms: obj.lastResponseTime ?? null,
+        lastResponseTime: obj.lastResponseTime ?? null,
+        uptime_percentage: obj.uptime ?? 100,
+        uptime: obj.uptime ?? 100,
+        created_at: obj.createdAt || obj.created_at,
+        updated_at: obj.updatedAt || obj.updated_at,
+    };
 }
 
-export async function dbGetMonitorById(id: number): Promise<Monitor | null> {
-    if (usePg) {
-        const res = await pool.query('SELECT * FROM monitors WHERE id = $1', [id]);
-        if (res.rows.length === 0) return null;
-        return {
-            ...res.rows[0],
-            uptime_percentage: parseFloat(res.rows[0].uptime_percentage || '100')
-        };
+function mapMetricDoc(doc: any): Metric {
+    const obj = doc.toObject ? doc.toObject() : doc;
+    const id = obj._id ? obj._id.toString() : String(obj.id || obj._id);
+    const monitorId = obj.monitorId ? obj.monitorId.toString() : String(obj.monitor_id || obj.monitorId);
+    return {
+        id,
+        _id: id,
+        monitor_id: monitorId,
+        monitorId: monitorId,
+        domain: obj.domain,
+        status_code: obj.httpStatus ?? null,
+        httpStatus: obj.httpStatus ?? null,
+        response_time_ms: obj.responseTime || 0,
+        responseTime: obj.responseTime || 0,
+        dns_time_ms: obj.dnsTime || 0,
+        dnsTime: obj.dnsTime || 0,
+        is_up: obj.isUp ?? true,
+        isUp: obj.isUp ?? true,
+        uptime: obj.uptime ?? 100,
+        status: obj.status || 'HEALTHY',
+        error_message: obj.errorMessage || null,
+        errorMessage: obj.errorMessage || null,
+        created_at: obj.timestamp || obj.created_at,
+        timestamp: obj.timestamp || obj.created_at,
+    };
+}
+
+function mapIncidentDoc(doc: any): Incident {
+    const obj = doc.toObject ? doc.toObject() : doc;
+    const id = obj._id ? obj._id.toString() : String(obj.id || obj._id);
+    const monitorId = obj.monitorId ? obj.monitorId.toString() : String(obj.monitor_id || obj.monitorId);
+    return {
+        id,
+        _id: id,
+        monitor_id: monitorId,
+        monitorId: monitorId,
+        domain: obj.domain,
+        title: obj.message || obj.title || `Incident on ${obj.domain}`,
+        message: obj.message || obj.title || `Incident on ${obj.domain}`,
+        severity: obj.severity || 'CRITICAL',
+        status: obj.resolvedStatus || obj.status || 'OPEN',
+        resolvedStatus: obj.resolvedStatus || obj.status || 'OPEN',
+        details: obj.details || '',
+        relevantMetricValues: obj.relevantMetricValues || {},
+        started_at: obj.timestamp || obj.started_at,
+        timestamp: obj.timestamp || obj.started_at,
+        resolved_at: obj.resolvedAt || obj.resolved_at,
+        resolvedAt: obj.resolvedAt || obj.resolved_at,
+    };
+}
+
+export async function dbGetMonitors(): Promise<Monitor[]> {
+    if (useMongo) {
+        const docs = await MonitorModel.find().sort({ createdAt: -1 });
+        return docs.map(mapMonitorDoc);
     }
-    return memoryStore.monitors.find(m => m.id === id) || null;
+    return memoryStore.monitors.map(mapMonitorDoc);
+}
+
+export async function dbGetMonitorById(id: string | number): Promise<Monitor | null> {
+    if (useMongo) {
+        if (!mongoose.Types.ObjectId.isValid(String(id))) return null;
+        const doc = await MonitorModel.findById(id);
+        return doc ? mapMonitorDoc(doc) : null;
+    }
+    const found = memoryStore.monitors.find(m => String(m._id || m.id) === String(id));
+    return found ? mapMonitorDoc(found) : null;
 }
 
 export async function dbInsertMonitor(name: string, domain: string, url: string, intervalSeconds: number): Promise<Monitor> {
-    if (usePg) {
-        const res = await pool.query(
-            `INSERT INTO monitors (name, domain, url, check_interval_seconds, status, uptime_percentage)
-             VALUES ($1, $2, $3, $4, 'HEALTHY', 100.00)
-             RETURNING *`,
-            [name, domain, url, intervalSeconds]
-        );
-        return {
-            ...res.rows[0],
-            uptime_percentage: parseFloat(res.rows[0].uptime_percentage || '100')
-        };
+    if (useMongo) {
+        const existing = await MonitorModel.findOne({ domain });
+        if (existing) return mapMonitorDoc(existing);
+
+        const doc = await MonitorModel.create({
+            name,
+            domain,
+            url,
+            interval: intervalSeconds,
+            status: 'HEALTHY',
+            uptime: 100,
+        });
+        return mapMonitorDoc(doc);
     }
 
     const existing = memoryStore.monitors.find(m => m.domain === domain);
-    if (existing) return existing;
+    if (existing) return mapMonitorDoc(existing);
 
-    const newMon: Monitor = {
-        id: memoryStore.monitorIdCounter++,
+    const newMon = {
+        _id: String(memoryStore.counter++),
+        id: String(memoryStore.counter),
         name,
         domain,
         url,
-        check_interval_seconds: intervalSeconds,
+        interval: intervalSeconds,
         status: 'HEALTHY',
-        last_status_code: null,
-        last_response_time_ms: null,
-        uptime_percentage: 100.00,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        lastStatusCode: null,
+        lastResponseTime: null,
+        uptime: 100,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
     };
     memoryStore.monitors.unshift(newMon);
-    return newMon;
+    return mapMonitorDoc(newMon);
 }
 
 export async function dbUpdateMonitorStatus(
-    id: number,
+    id: string | number,
     status: Monitor['status'],
     statusCode: number | null,
     responseTimeMs: number,
     uptimePercentage: number
 ): Promise<void> {
-    if (usePg) {
-        await pool.query(
-            `UPDATE monitors
-             SET status = $1, last_status_code = $2, last_response_time_ms = $3, uptime_percentage = $4, updated_at = NOW()
-             WHERE id = $5`,
-            [status, statusCode, responseTimeMs, uptimePercentage, id]
-        );
+    if (useMongo) {
+        if (mongoose.Types.ObjectId.isValid(String(id))) {
+            await MonitorModel.findByIdAndUpdate(id, {
+                status,
+                lastStatusCode: statusCode,
+                lastResponseTime: responseTimeMs,
+                uptime: uptimePercentage,
+            });
+        }
         return;
     }
 
-    const mon = memoryStore.monitors.find(m => m.id === id);
+    const mon = memoryStore.monitors.find(m => String(m._id || m.id) === String(id));
     if (mon) {
         mon.status = status;
-        mon.last_status_code = statusCode;
-        mon.last_response_time_ms = responseTimeMs;
-        mon.uptime_percentage = uptimePercentage;
-        mon.updated_at = new Date().toISOString();
+        mon.lastStatusCode = statusCode;
+        mon.lastResponseTime = responseTimeMs;
+        mon.uptime = uptimePercentage;
+        mon.updatedAt = new Date().toISOString();
     }
 }
 
-export async function dbDeleteMonitor(id: number): Promise<boolean> {
-    if (usePg) {
-        const res = await pool.query('DELETE FROM monitors WHERE id = $1', [id]);
-        return (res.rowCount || 0) > 0;
+export async function dbDeleteMonitor(id: string | number): Promise<boolean> {
+    if (useMongo) {
+        if (!mongoose.Types.ObjectId.isValid(String(id))) return false;
+        const res = await MonitorModel.findByIdAndDelete(id);
+        if (res) {
+            await MetricModel.deleteMany({ monitorId: id });
+            await IncidentModel.deleteMany({ monitorId: id });
+            return true;
+        }
+        return false;
     }
 
-    const idx = memoryStore.monitors.findIndex(m => m.id === id);
+    const idx = memoryStore.monitors.findIndex(m => String(m._id || m.id) === String(id));
     if (idx !== -1) {
+        const monId = String(memoryStore.monitors[idx]._id || memoryStore.monitors[idx].id);
         memoryStore.monitors.splice(idx, 1);
-        memoryStore.metrics = memoryStore.metrics.filter(m => m.monitor_id !== id);
-        memoryStore.incidents = memoryStore.incidents.filter(i => i.monitor_id !== id);
+        memoryStore.metrics = memoryStore.metrics.filter(m => String(m.monitorId) !== monId);
+        memoryStore.incidents = memoryStore.incidents.filter(i => String(i.monitorId) !== monId);
         return true;
     }
     return false;
 }
 
-export async function dbInsertMetric(metric: Omit<Metric, 'id' | 'created_at'>): Promise<Metric> {
-    if (usePg) {
-        const res = await pool.query(
-            `INSERT INTO metrics (monitor_id, status_code, response_time_ms, status, dns_time_ms, is_up, error_message)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             RETURNING *`,
-            [
-                metric.monitor_id,
-                metric.status_code,
-                metric.response_time_ms,
-                metric.status,
-                metric.dns_time_ms,
-                metric.is_up,
-                metric.error_message || null
-            ]
-        );
-        return res.rows[0];
+export async function dbInsertMetric(metricData: {
+    monitor_id: string | number;
+    domain?: string;
+    status_code: number | null;
+    response_time_ms: number;
+    status: Metric['status'];
+    dns_time_ms: number;
+    is_up: boolean;
+    error_message?: string | null;
+}): Promise<Metric> {
+    let domainStr = metricData.domain || '';
+    if (!domainStr) {
+        const mon = await dbGetMonitorById(metricData.monitor_id);
+        if (mon) domainStr = mon.domain;
     }
 
-    const newMetric: Metric = {
-        id: memoryStore.metricIdCounter++,
-        ...metric,
-        created_at: new Date().toISOString()
+    if (useMongo) {
+        const doc = await MetricModel.create({
+            monitorId: metricData.monitor_id,
+            domain: domainStr,
+            httpStatus: metricData.status_code,
+            responseTime: metricData.response_time_ms,
+            dnsTime: metricData.dns_time_ms,
+            isUp: metricData.is_up,
+            status: metricData.status,
+            errorMessage: metricData.error_message || null,
+            timestamp: new Date(),
+        });
+        return mapMetricDoc(doc);
+    }
+
+    const newMetric = {
+        _id: String(memoryStore.counter++),
+        id: String(memoryStore.counter),
+        monitorId: String(metricData.monitor_id),
+        domain: domainStr,
+        httpStatus: metricData.status_code,
+        responseTime: metricData.response_time_ms,
+        dnsTime: metricData.dns_time_ms,
+        isUp: metricData.is_up,
+        status: metricData.status,
+        errorMessage: metricData.error_message || null,
+        timestamp: new Date().toISOString(),
     };
     memoryStore.metrics.push(newMetric);
-    // Keep max 500 metrics in memory store
-    if (memoryStore.metrics.length > 500) {
-        memoryStore.metrics.shift();
-    }
-    return newMetric;
+    if (memoryStore.metrics.length > 500) memoryStore.metrics.shift();
+    return mapMetricDoc(newMetric);
 }
 
-export async function dbGetMetricsByMonitorId(monitorId: number, limit = 50): Promise<Metric[]> {
-    if (usePg) {
-        const res = await pool.query(
-            'SELECT * FROM metrics WHERE monitor_id = $1 ORDER BY id DESC LIMIT $2',
-            [monitorId, limit]
-        );
-        return res.rows.reverse();
+export async function dbGetMetricsByMonitorId(monitorId: string | number, limit = 100, range?: string): Promise<Metric[]> {
+    let cutoffDate: Date | null = null;
+    if (range === '15m') cutoffDate = new Date(Date.now() - 15 * 60 * 1000);
+    else if (range === '1h') cutoffDate = new Date(Date.now() - 60 * 60 * 1000);
+    else if (range === '6h') cutoffDate = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    else if (range === '24h') cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    if (useMongo) {
+        const query: any = { monitorId: String(monitorId) };
+        if (cutoffDate) {
+            query.timestamp = { $gte: cutoffDate };
+        }
+        const docs = await MetricModel.find(query).sort({ timestamp: cutoffDate ? 1 : -1 }).limit(limit);
+        const mapped = docs.map(mapMetricDoc);
+        return cutoffDate ? mapped : mapped.reverse();
     }
 
-    return memoryStore.metrics
-        .filter(m => m.monitor_id === monitorId)
-        .slice(-limit);
+    let filtered = memoryStore.metrics.filter(m => String(m.monitorId) === String(monitorId));
+    if (cutoffDate) {
+        filtered = filtered.filter(m => new Date(m.timestamp).getTime() >= cutoffDate.getTime());
+    }
+    return filtered.slice(-limit).map(mapMetricDoc);
 }
 
-export async function dbCalculateUptime(monitorId: number): Promise<number> {
-    if (usePg) {
-        const res = await pool.query(
-            `SELECT COUNT(*) as total, SUM(CASE WHEN is_up = true THEN 1 ELSE 0 END) as up_count
-             FROM metrics WHERE monitor_id = $1`,
-            [monitorId]
-        );
-        const total = parseInt(res.rows[0]?.total || '0');
-        const upCount = parseInt(res.rows[0]?.up_count || '0');
+export async function dbCalculateUptime(monitorId: string | number): Promise<number> {
+    if (useMongo) {
+        const total = await MetricModel.countDocuments({ monitorId: String(monitorId) });
         if (total === 0) return 100.0;
+        const upCount = await MetricModel.countDocuments({ monitorId: String(monitorId), isUp: true });
         return parseFloat(((upCount / total) * 100).toFixed(2));
     }
 
-    const monMetrics = memoryStore.metrics.filter(m => m.monitor_id === monitorId);
+    const monMetrics = memoryStore.metrics.filter(m => String(m.monitorId) === String(monitorId));
     if (monMetrics.length === 0) return 100.0;
-    const upCount = monMetrics.filter(m => m.is_up).length;
+    const upCount = monMetrics.filter(m => m.isUp).length;
     return parseFloat(((upCount / monMetrics.length) * 100).toFixed(2));
 }
 
-export async function dbInsertIncident(incident: Omit<Incident, 'id' | 'started_at' | 'status'> & { status?: Incident['status'] }): Promise<Incident> {
-    const status = incident.status || 'OPEN';
-    if (usePg) {
-        const res = await pool.query(
-            `INSERT INTO incidents (monitor_id, title, severity, status, details)
-             VALUES ($1, $2, $3, $4, $5)
-             RETURNING *`,
-            [incident.monitor_id, incident.title, incident.severity, status, incident.details]
-        );
-        return res.rows[0];
+export async function dbInsertIncident(incidentData: {
+    monitor_id: string | number;
+    domain?: string;
+    title: string;
+    severity: 'CRITICAL' | 'WARNING';
+    details: string;
+    status?: 'OPEN' | 'RESOLVED';
+}): Promise<Incident> {
+    let domainStr = incidentData.domain || '';
+    if (!domainStr) {
+        const mon = await dbGetMonitorById(incidentData.monitor_id);
+        if (mon) domainStr = mon.domain;
     }
 
-    const newInc: Incident = {
-        id: memoryStore.incidentIdCounter++,
-        ...incident,
-        status,
-        started_at: new Date().toISOString()
+    if (useMongo) {
+        const doc = await IncidentModel.create({
+            monitorId: incidentData.monitor_id,
+            domain: domainStr,
+            severity: incidentData.severity,
+            message: incidentData.title,
+            details: incidentData.details,
+            relevantMetricValues: { domain: domainStr, severity: incidentData.severity },
+            resolvedStatus: incidentData.status || 'OPEN',
+            timestamp: new Date(),
+        });
+        return mapIncidentDoc(doc);
+    }
+
+    const newInc = {
+        _id: String(memoryStore.counter++),
+        id: String(memoryStore.counter),
+        monitorId: String(incidentData.monitor_id),
+        domain: domainStr,
+        severity: incidentData.severity,
+        message: incidentData.title,
+        details: incidentData.details,
+        relevantMetricValues: { domain: domainStr, severity: incidentData.severity },
+        resolvedStatus: incidentData.status || 'OPEN',
+        timestamp: new Date().toISOString(),
     };
     memoryStore.incidents.unshift(newInc);
-    return newInc;
+    return mapIncidentDoc(newInc);
 }
 
-export async function dbGetOpenIncidentForMonitor(monitorId: number): Promise<Incident | null> {
-    if (usePg) {
-        const res = await pool.query(
-            `SELECT * FROM incidents WHERE monitor_id = $1 AND status = 'OPEN' ORDER BY id DESC LIMIT 1`,
-            [monitorId]
-        );
-        return res.rows[0] || null;
+export async function dbGetOpenIncidentForMonitor(monitorId: string | number): Promise<Incident | null> {
+    if (useMongo) {
+        const doc = await IncidentModel.findOne({ monitorId: String(monitorId), resolvedStatus: 'OPEN' }).sort({ timestamp: -1 });
+        return doc ? mapIncidentDoc(doc) : null;
     }
-    return memoryStore.incidents.find(i => i.monitor_id === monitorId && i.status === 'OPEN') || null;
+    const found = memoryStore.incidents.find(i => String(i.monitorId) === String(monitorId) && i.resolvedStatus === 'OPEN');
+    return found ? mapIncidentDoc(found) : null;
 }
 
-export async function dbResolveIncident(incidentId: number): Promise<Incident | null> {
-    if (usePg) {
-        const res = await pool.query(
-            `UPDATE incidents SET status = 'RESOLVED', resolved_at = NOW() WHERE id = $1 RETURNING *`,
-            [incidentId]
+export async function dbResolveIncident(incidentId: string | number): Promise<Incident | null> {
+    if (useMongo) {
+        if (!mongoose.Types.ObjectId.isValid(String(incidentId))) return null;
+        const doc = await IncidentModel.findByIdAndUpdate(
+            incidentId,
+            { resolvedStatus: 'RESOLVED', resolvedAt: new Date() },
+            { new: true }
         );
-        return res.rows[0] || null;
+        return doc ? mapIncidentDoc(doc) : null;
     }
 
-    const inc = memoryStore.incidents.find(i => i.id === incidentId);
+    const inc = memoryStore.incidents.find(i => String(i._id || i.id) === String(incidentId));
     if (inc) {
-        inc.status = 'RESOLVED';
-        inc.resolved_at = new Date().toISOString();
-        return inc;
+        inc.resolvedStatus = 'RESOLVED';
+        inc.resolvedAt = new Date().toISOString();
+        return mapIncidentDoc(inc);
     }
     return null;
 }
 
-export async function dbGetIncidents(limit = 20): Promise<Incident[]> {
-    if (usePg) {
-        const res = await pool.query('SELECT * FROM incidents ORDER BY id DESC LIMIT $1', [limit]);
-        return res.rows;
+export async function dbGetIncidents(limit = 50): Promise<Incident[]> {
+    if (useMongo) {
+        const docs = await IncidentModel.find().sort({ timestamp: -1 }).limit(limit);
+        return docs.map(mapIncidentDoc);
     }
-    return memoryStore.incidents.slice(0, limit);
+    return memoryStore.incidents.slice(0, limit).map(mapIncidentDoc);
 }

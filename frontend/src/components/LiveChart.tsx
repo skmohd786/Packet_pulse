@@ -15,9 +15,16 @@ import { StatusBadge } from './StatusBadge';
 interface LiveChartProps {
   monitor: Monitor | null;
   metrics: Metric[];
+  selectedRange: string;
+  onRangeChange: (range: string) => void;
 }
 
-export const LiveChart: React.FC<LiveChartProps> = ({ monitor, metrics }) => {
+export const LiveChart: React.FC<LiveChartProps> = ({
+  monitor,
+  metrics,
+  selectedRange,
+  onRangeChange,
+}) => {
   if (!monitor) {
     return (
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
@@ -29,11 +36,11 @@ export const LiveChart: React.FC<LiveChartProps> = ({ monitor, metrics }) => {
   }
 
   const chartData = metrics.map((m) => {
-    const time = new Date(m.created_at).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
+    const d = new Date(m.created_at);
+    const time = ['6h', '24h'].includes(selectedRange)
+      ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
     return {
       time,
       latency: m.response_time_ms,
@@ -55,6 +62,8 @@ export const LiveChart: React.FC<LiveChartProps> = ({ monitor, metrics }) => {
   const lastChecked = monitor.updated_at
     ? new Date(monitor.updated_at).toLocaleTimeString()
     : 'Just now';
+
+  const ranges = ['15m', '1h', '6h', '24h'];
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
@@ -102,22 +111,36 @@ export const LiveChart: React.FC<LiveChartProps> = ({ monitor, metrics }) => {
         </div>
       </div>
 
-      {/* Main Response Time Telemetry Graph */}
+      {/* Main Response Time Telemetry Graph & Time Range Selector */}
       <div className="pt-5">
-        <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mb-3">
+        <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mb-3 flex-wrap gap-2">
           <span className="flex items-center gap-1.5 text-zinc-300">
             <Activity className="w-4 h-4 text-emerald-400" />
-            Response Time (ms) — Real-Time Trace Stream
+            Response Time (ms) — Real & Historical Metrics ({selectedRange})
           </span>
-          <span className="text-[11px] text-zinc-500">
-            HTTP Status: <span className="text-emerald-400 font-bold">{monitor.last_status_code ?? '200'}</span> | Uptime: <span className="text-emerald-400 font-bold">{monitor.uptime_percentage}%</span>
-          </span>
+
+          {/* Time Range Selector */}
+          <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded border border-zinc-800">
+            {ranges.map((r) => (
+              <button
+                key={r}
+                onClick={() => onRangeChange(r)}
+                className={`px-2 py-0.5 text-[11px] font-mono rounded transition ${
+                  selectedRange === r
+                    ? 'bg-zinc-800 text-emerald-400 font-bold border border-zinc-700'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="h-64 w-full">
           {chartData.length === 0 ? (
             <div className="h-full flex items-center justify-center text-zinc-600 font-mono text-xs">
-              Awaiting telemetry sample stream...
+              No metrics stored for range {selectedRange}...
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">

@@ -55,13 +55,14 @@ router.post('/monitors', async (req: Request, res: Response) => {
     }
 });
 
-// GET /api/monitors/:id/metrics - Get metrics history for charts
+// GET /api/monitors/:id/metrics - Get historical metrics for charts
 router.get('/monitors/:id/metrics', async (req: Request, res: Response) => {
     try {
-        const monitorId = parseInt(req.params.id);
-        const limit = parseInt(req.query.limit as string) || 50;
-        const metrics = await dbGetMetricsByMonitorId(monitorId, limit);
-        res.json({ success: true, metrics });
+        const monitorId = req.params.id;
+        const limit = parseInt(req.query.limit as string) || 100;
+        const range = req.query.range as string | undefined;
+        const metrics = await dbGetMetricsByMonitorId(monitorId, limit, range);
+        res.json({ success: true, metrics, range: range || 'all' });
     } catch (err: any) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -70,7 +71,7 @@ router.get('/monitors/:id/metrics', async (req: Request, res: Response) => {
 // DELETE /api/monitors/:id - Remove a monitor
 router.delete('/monitors/:id', async (req: Request, res: Response) => {
     try {
-        const monitorId = parseInt(req.params.id);
+        const monitorId = req.params.id;
         const deleted = await dbDeleteMonitor(monitorId);
         if (!deleted) {
             return res.status(404).json({ success: false, error: 'Monitor not found' });
@@ -94,7 +95,7 @@ router.get('/incidents', async (req: Request, res: Response) => {
 // POST /api/incidents/:id/resolve - Resolve incident
 router.post('/incidents/:id/resolve', async (req: Request, res: Response) => {
     try {
-        const incidentId = parseInt(req.params.id);
+        const incidentId = req.params.id;
         const resolved = await dbResolveIncident(incidentId);
         if (!resolved) {
             return res.status(404).json({ success: false, error: 'Incident not found' });

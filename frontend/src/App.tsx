@@ -14,6 +14,7 @@ export const App: React.FC = () => {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedMonitorId, setSelectedMonitorId] = useState<number | null>(null);
+  const [selectedRange, setSelectedRange] = useState<string>('15m');
   const [metricsHistory, setMetricsHistory] = useState<Record<number, Metric[]>>({});
   const [isConnected, setIsConnected] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -32,20 +33,6 @@ export const App: React.FC = () => {
         if (monRes.monitors.length > 0 && !selectedMonitorId) {
           setSelectedMonitorId(monRes.monitors[0].id);
         }
-
-        // Fetch initial metric history for monitors
-        for (const mon of monRes.monitors) {
-          fetch(`/api/monitors/${mon.id}/metrics?limit=30`)
-            .then((r) => r.json())
-            .then((res) => {
-              if (res.success) {
-                setMetricsHistory((prev) => ({
-                  ...prev,
-                  [mon.id]: res.metrics,
-                }));
-              }
-            });
-        }
       }
 
       if (incRes.success && incRes.incidents) {
@@ -55,6 +42,21 @@ export const App: React.FC = () => {
       console.error('Failed to load initial data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch metrics history for selected monitor and range
+  const fetchMetricsForMonitor = async (monitorId: number, range: string) => {
+    try {
+      const res = await fetch(`/api/monitors/${monitorId}/metrics?range=${range}&limit=100`).then((r) => r.json());
+      if (res.success && res.metrics) {
+        setMetricsHistory((prev) => ({
+          ...prev,
+          [monitorId]: res.metrics,
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch historical metrics:', err);
     }
   };
 
@@ -93,9 +95,10 @@ export const App: React.FC = () => {
           return updated;
         });
 
+        // Append live metric into active dataset
         setMetricsHistory((prevHistory) => {
           const existing = prevHistory[monitorId] || [];
-          const updated = [...existing, metric].slice(-50);
+          const updated = [...existing, metric].slice(-100);
           return {
             ...prevHistory,
             [monitorId]: updated,
@@ -124,6 +127,13 @@ export const App: React.FC = () => {
       socket.disconnect();
     };
   }, []);
+
+  // Trigger metrics fetch whenever selected monitor or range changes
+  useEffect(() => {
+    if (selectedMonitorId) {
+      fetchMetricsForMonitor(selectedMonitorId, selectedRange);
+    }
+  }, [selectedMonitorId, selectedRange]);
 
   const handleAddMonitor = async (
     domain: string,
@@ -195,8 +205,13 @@ export const App: React.FC = () => {
           <EmptyState type="no-targets" onAction={() => setIsAddModalOpen(true)} />
         ) : (
           <>
-            {/* Primary Visual Element: Response-Time Telemetry Chart */}
-            <LiveChart monitor={selectedMonitor} metrics={currentMetrics} />
+            {/* Primary Visual Element: Response-Time Telemetry & Historical Metrics Chart */}
+            <LiveChart
+              monitor={selectedMonitor}
+              metrics={currentMetrics}
+              selectedRange={selectedRange}
+              onRangeChange={(r) => setSelectedRange(r)}
+            />
 
             {/* Split Grid: Target Table & Incident Panel */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
