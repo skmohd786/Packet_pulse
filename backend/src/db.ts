@@ -5,7 +5,12 @@ import { MetricModel } from './models/Metric';
 import { IncidentModel } from './models/Incident';
 import { Monitor, Metric, Incident } from './types';
 
+import path from 'path';
+
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
 let useMongo = false;
 

@@ -1,5 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
+import dotenv from 'dotenv';
+import path from 'path';
 import { Incident, Metric } from '../types';
+
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
 export interface AIAnalysisResult {
     summary: string;
@@ -93,9 +100,13 @@ Return ONLY valid JSON matching this exact structure:
 
         throw new Error('Failed to parse structured JSON response from Gemini');
     } catch (err: any) {
-        if (err.message && err.message.includes('API_KEY_INVALID')) {
-            throw new Error('Invalid GEMINI_API_KEY provided');
+        const msg = err.message || '';
+        if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid')) {
+            throw new Error('Invalid GEMINI_API_KEY provided. Please check your Gemini API key in .env');
         }
-        throw err;
+        if (msg.includes('NOT_FOUND') || msg.includes('models/')) {
+            throw new Error(`Gemini model '${modelName}' not found or unavailable. Please check GEMINI_MODEL.`);
+        }
+        throw new Error(msg || 'Gemini AI API request failed');
     }
 }
