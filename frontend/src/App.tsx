@@ -108,6 +108,12 @@ export const App: React.FC = () => {
       setIncidents((prev) => [newIncident, ...prev]);
     });
 
+    socket.on('incident:update', (updatedIncident: Incident) => {
+      setIncidents((prev) =>
+        prev.map((i) => (i.id === updatedIncident.id ? updatedIncident : i))
+      );
+    });
+
     socket.on('incident:resolved', (resolvedIncident: Incident) => {
       setIncidents((prev) =>
         prev.map((i) => (i.id === resolvedIncident.id ? resolvedIncident : i))

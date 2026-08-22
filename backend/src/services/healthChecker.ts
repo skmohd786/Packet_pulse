@@ -20,7 +20,7 @@ export async function performHealthCheck(urlStr: string): Promise<CheckResult> {
         };
     }
 
-    // Perform DNS lookup timing
+    // DNS lookup timing
     const dnsStart = performance.now();
     let dnsTimeMs = 0;
     try {
@@ -28,13 +28,12 @@ export async function performHealthCheck(urlStr: string): Promise<CheckResult> {
         dnsTimeMs = Math.round(performance.now() - dnsStart);
     } catch (dnsErr: any) {
         dnsTimeMs = Math.round(performance.now() - dnsStart);
-        // DNS failure might occur for local/test URLs, so we log but continue to attempt fetch if possible
     }
 
     // Perform real HTTP Health Check
     const httpStart = performance.now();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout limit
 
     try {
         const response = await fetch(formattedUrl, {
@@ -49,15 +48,25 @@ export async function performHealthCheck(urlStr: string): Promise<CheckResult> {
         clearTimeout(timeoutId);
         const responseTimeMs = Math.round(performance.now() - httpStart);
         const statusCode = response.status;
-        const isUp = statusCode >= 200 && statusCode < 400;
+        const isUp = statusCode >= 200 && statusCode < 500; // 500+ considered server failure
 
+        // Checkpoint 4 Incident Threshold Rules Evaluation:
+        // Rule 1: HTTP Request Fails -> CRITICAL
+        // Rule 2: HTTP Status >= 500 -> CRITICAL
+        // Rule 3: Response Time >= 2000ms -> CRITICAL
+        // Rule 4: Response Time >= 500ms -> WARNING
         let status: HealthStatus = 'HEALTHY';
-        if (!isUp) {
+        let errorMessage: string | undefined = undefined;
+
+        if (statusCode >= 500) {
             status = 'CRITICAL';
-        } else if (responseTimeMs > 1000) {
+            errorMessage = `HTTP ${statusCode} Server Error`;
+        } else if (responseTimeMs >= 2000) {
+            status = 'CRITICAL';
+            errorMessage = `High Latency: ${responseTimeMs}ms >= 2000ms threshold`;
+        } else if (responseTimeMs >= 500) {
             status = 'WARNING';
-        } else if (responseTimeMs > 2500) {
-            status = 'CRITICAL';
+            errorMessage = `Elevated Latency: ${responseTimeMs}ms >= 500ms threshold`;
         }
 
         return {
@@ -65,6 +74,7 @@ export async function performHealthCheck(urlStr: string): Promise<CheckResult> {
             responseTimeMs,
             dnsTimeMs,
             isUp,
+            errorMessage,
             status,
         };
     } catch (err: any) {
@@ -77,8 +87,8 @@ export async function performHealthCheck(urlStr: string): Promise<CheckResult> {
             responseTimeMs: isTimeout ? 10000 : responseTimeMs,
             dnsTimeMs,
             isUp: false,
-            errorMessage: isTimeout ? 'Request timed out (10s limit)' : (err.message || 'Network connection error'),
-            status: 'CRITICAL',
+            errorMessage: isTimeout ? 'HTTP Request Timeout (10s limit)' : (err.message || 'HTTP Request Connection Failed'),
+            status: 'CRITICAL', // Rule 1: HTTP request fails -> CRITICAL
         };
     }
 }

@@ -6,7 +6,8 @@ import {
     dbCalculateUptime,
     dbGetOpenIncidentForMonitor,
     dbInsertIncident,
-    dbResolveIncident
+    dbResolveIncident,
+    pool
 } from '../db';
 import { performHealthCheck } from './healthChecker';
 
@@ -20,7 +21,7 @@ export function initMonitorEngine(io?: SocketIOServer) {
     }
     if (!isRunning) {
         isRunning = true;
-        console.log(`PacketPulse Real-Time Monitoring Engine started (Interval: ${checkIntervalMs}ms)`);
+        console.log(`PacketPulse Incident Engine started (Cycle: ${checkIntervalMs}ms)`);
         runMonitoringCycle();
         setInterval(runMonitoringCycle, checkIntervalMs);
     }
@@ -32,7 +33,7 @@ export async function runMonitoringCycle() {
         if (monitors.length === 0) return;
 
         for (const monitor of monitors) {
-            // Perform real HTTP health check
+            // Perform real HTTP health check against domain
             const check = await performHealthCheck(monitor.url);
 
             // Store metric in PostgreSQL database
@@ -46,10 +47,10 @@ export async function runMonitoringCycle() {
                 error_message: check.errorMessage
             });
 
-            // Calculate aggregate uptime percentage
+            // Calculate aggregate availability and uptime percentage
             const uptime = await dbCalculateUptime(monitor.id);
 
-            // Update monitor status and metrics in PostgreSQL
+            // Update monitor status in PostgreSQL
             await dbUpdateMonitorStatus(
                 monitor.id,
                 check.status,
@@ -67,36 +68,62 @@ export async function runMonitoringCycle() {
                 updated_at: new Date().toISOString()
             };
 
-            // Incident Detection & Handling
+            // CHECKPOINT 4: INCIDENT DETECTION & DEDUPLICATION LOGIC
             const openIncident = await dbGetOpenIncidentForMonitor(monitor.id);
 
-            if (check.status === 'CRITICAL' && !openIncident) {
-                const title = !check.isUp
-                    ? `Outage Detected: ${monitor.name} is UNREACHABLE`
-                    : `High Latency / Error: ${monitor.name} returned HTTP ${check.statusCode || 'N/A'}`;
+            if (check.status === 'CRITICAL' || check.status === 'WARNING') {
+                const severity = check.status;
+                let title = `${severity} Incident: ${monitor.domain}`;
+                if (!check.isUp) {
+                    title = `CRITICAL Failure: ${monitor.domain} Request Failed`;
+                } else if (check.statusCode && check.statusCode >= 500) {
+                    title = `CRITICAL Error: ${monitor.domain} returned HTTP ${check.statusCode}`;
+                } else if (check.responseTimeMs >= 2000) {
+                    title = `CRITICAL Latency: ${monitor.domain} (${check.responseTimeMs}ms >= 2000ms)`;
+                } else if (check.responseTimeMs >= 500) {
+                    title = `WARNING Latency: ${monitor.domain} (${check.responseTimeMs}ms >= 500ms)`;
+                }
+
                 const details = check.errorMessage
-                    ? `Health check failed: ${check.errorMessage}`
-                    : `Monitor ${monitor.domain} returned status code ${check.statusCode} with latency ${check.responseTimeMs}ms`;
+                    ? `Domain: ${monitor.domain} | Severity: ${severity} | Telemetry: ${check.errorMessage} | HTTP: ${check.statusCode ?? 'N/A'} | Ping: ${check.responseTimeMs}ms`
+                    : `Domain: ${monitor.domain} | Severity: ${severity} | HTTP: ${check.statusCode ?? 'N/A'} | Ping: ${check.responseTimeMs}ms`;
 
-                const incident = await dbInsertIncident({
-                    monitor_id: monitor.id,
-                    title,
-                    severity: 'CRITICAL',
-                    details
-                });
+                if (!openIncident) {
+                    // Create new Incident record in PostgreSQL
+                    const incident = await dbInsertIncident({
+                        monitor_id: monitor.id,
+                        title,
+                        severity,
+                        details,
+                        status: 'OPEN'
+                    });
 
-                if (ioInstance) {
-                    ioInstance.emit('incident:new', incident);
+                    // Emit real-time WebSocket incident alert
+                    if (ioInstance) {
+                        ioInstance.emit('incident:new', incident);
+                    }
+                } else {
+                    // Prevent duplicate incidents during continuous failure.
+                    // If severity escalated from WARNING to CRITICAL, update existing open incident.
+                    if (openIncident.severity === 'WARNING' && severity === 'CRITICAL') {
+                        openIncident.severity = 'CRITICAL';
+                        openIncident.title = title;
+                        openIncident.details = details;
+
+                        if (ioInstance) {
+                            ioInstance.emit('incident:update', openIncident);
+                        }
+                    }
                 }
             } else if (check.status === 'HEALTHY' && openIncident) {
+                // Auto-resolve incident when health condition recovers
                 const resolved = await dbResolveIncident(openIncident.id);
                 if (resolved && ioInstance) {
                     ioInstance.emit('incident:resolved', resolved);
                 }
             }
 
-            // Real-Time Socket.IO Telemetry Stream
-            // Flow: Monitoring Engine -> New Metric -> Node.js -> Socket.IO -> React Dashboard
+            // Real-Time Socket.IO Telemetry Emission
             if (ioInstance) {
                 ioInstance.emit('metric:new', {
                     monitorId: monitor.id,
@@ -106,6 +133,6 @@ export async function runMonitoringCycle() {
             }
         }
     } catch (err: any) {
-        console.error('Error during real-time website monitoring cycle:', err.message);
+        console.error('Error during incident monitoring cycle:', err.message);
     }
 }
