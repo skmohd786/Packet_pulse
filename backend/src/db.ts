@@ -1,15 +1,15 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { MonitorModel, IMonitor } from './models/Monitor';
-import { MetricModel, IMetric } from './models/Metric';
-import { IncidentModel, IIncident } from './models/Incident';
+import { MonitorModel } from './models/Monitor';
+import { MetricModel } from './models/Metric';
+import { IncidentModel } from './models/Incident';
 import { Monitor, Metric, Incident } from './types';
 
 dotenv.config();
 
 let useMongo = false;
 
-// Fallback In-Memory Document Store (used if MongoDB server is offline)
+// Fallback In-Memory Document Store (used if MongoDB connection is unavailable)
 const memoryStore = {
     monitors: [] as any[],
     metrics: [] as any[],
@@ -18,24 +18,28 @@ const memoryStore = {
 };
 
 export async function initDb() {
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/packetpulse';
-    try {
-        await mongoose.connect(mongoUri, {
-            serverSelectionTimeoutMS: 2500,
-        });
-        useMongo = true;
-        console.log(`Successfully connected to MongoDB database at ${mongoUri}`);
-    } catch (err: any) {
-        console.warn('MongoDB connection warning:', err.message);
-        console.warn('Using in-memory MongoDB document store fallback for PacketPulse operations.');
-        useMongo = false;
-
-        // Seed initial demo monitors in memory if empty
-        if (memoryStore.monitors.length === 0) {
-            await dbInsertMonitor('Example Website', 'example.com', 'https://example.com', 5);
-            await dbInsertMonitor('Google', 'google.com', 'https://google.com', 5);
-            await dbInsertMonitor('HTTPStat Test 500', 'httpstat.us/500', 'https://httpstat.us/500', 5);
+    const mongoUri = process.env.MONGODB_URI;
+    if (mongoUri && mongoUri.trim()) {
+        try {
+            await mongoose.connect(mongoUri.trim(), {
+                serverSelectionTimeoutMS: 4000,
+            });
+            useMongo = true;
+            console.log('PacketPulse successfully connected to MongoDB Atlas database');
+        } catch (err: any) {
+            console.warn('MongoDB Atlas connection warning:', err.message);
+            console.warn('Using in-memory MongoDB document store fallback for operations.');
+            useMongo = false;
         }
+    } else {
+        console.warn('MONGODB_URI not provided in environment; using in-memory store.');
+        useMongo = false;
+    }
+
+    if (!useMongo && memoryStore.monitors.length === 0) {
+        await dbInsertMonitor('Example Website', 'example.com', 'https://example.com', 5);
+        await dbInsertMonitor('Google', 'google.com', 'https://google.com', 5);
+        await dbInsertMonitor('HTTPStat Test 500', 'httpstat.us/500', 'https://httpstat.us/500', 5);
     }
 }
 
