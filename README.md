@@ -1,124 +1,80 @@
-# PacketPulse — Web-Based Network Packet Analyzer
+# PacketPulse — Real-Time Website & Server Health Monitoring Platform
 
-**PacketPulse** is a modern, high-performance web application inspired by Wireshark for parsing, decoding, analyzing, and visualizing network packet capture (`.pcap`) files.
+PacketPulse is a real-time observability platform that continuously monitors website availability, HTTP status, response time, uptime, and incident detection with live telemetry streamed directly to a dynamic React dashboard via WebSockets.
 
 ---
 
-## Features
+## Production Deployment Architecture
 
-- 📁 **PCAP File Upload**: Drag-and-drop or select `.pcap`, `.pcapng`, or `.cap` files (up to 100MB).
-- ⚡ **Instant Sample Capture**: 1-click built-in test PCAP generator synthesizing ARP, DNS, TCP 3-way handshakes, HTTP GET/POST requests & responses, HTTPS/TLS ClientHello metadata, and UDP NTP packets.
-- 🔬 **Layered Protocol Decoding**:
-  - **Link Layer**: Ethernet II, IEEE 802.1Q VLAN, Linux Cooked (SLL), BSD Loopback.
-  - **Network Layer**: IPv4, IPv6, ARP.
-  - **Transport Layer**: TCP (with SYN, ACK, FIN, RST, PSH, URG flags, window size, sequence numbers), UDP, ICMP.
-  - **Application Layer**: DNS (queries, responses, A/AAAA records, transaction IDs, domain name pointer compression decoding), HTTP (methods, status codes 200, 301, 401, 404, 500, headers), HTTPS/TLS (record & handshake types).
-- 📊 **Interactive Dashboard & Visualizations**:
-  - **Protocol Distribution**: Recharts Donut/Pie Chart.
-  - **Traffic Over Time**: Recharts Area/Line Chart with time-bucketed volume.
-  - **Top Source IPs**: Recharts Horizontal Bar Chart highlighting top traffic sources.
-- 🔍 **Live Search & Protocol Filters**: Search by IP, port, protocol, packet number, domain name, or HTTP path; filter by TCP, UDP, DNS, HTTP, HTTPS, ARP, ICMP.
-- 💻 **Hex & ASCII Payload Inspector**: Click any packet row to inspect full layer header breakdowns and an interactive hex/ASCII byte grid (`0000 45 00 00 3c ... |E..<|`).
+```
+┌────────────────────────────────┐         REST & WebSockets         ┌────────────────────────────────┐
+│   Vercel (React Frontend)      ├──────────────────────────────────►│    Render (Node.js Backend)    │
+│  - VITE_API_URL                │                                   │   - PORT                       │
+│  - VITE_WS_URL                 │                                   │   - MONGODB_URI                │
+└────────────────────────────────┘                                   │   - CORS_ORIGIN                │
+                                                                     └───────────────┬────────────────┘
+                                                                                     │
+                                                                            Mongoose Connection
+                                                                                     │
+                                                                     ┌───────────────▼────────────────┐
+                                                                     │     MongoDB Atlas Database     │
+                                                                     └────────────────────────────────┘
+```
 
 ---
 
 ## Tech Stack
 
-- **Frontend**: React 18, Vite, Tailwind CSS (Custom Dark Cyber Theme), React Router DOM v6, Recharts, Lucide Icons, Axios.
-- **Backend**: Node.js, Express.js, Multer (file upload validation), UUID, CORS, dotenv.
-- **Parser**: Pure JavaScript binary PCAP parser (`server/parser/pcapBinaryParser.js`) reading `libpcap` global headers and packet records without native C/C++ dependencies.
+- **Frontend**: React + TypeScript + Vite + Tailwind CSS + Recharts + Socket.IO Client
+- **Backend**: Node.js + Express + TypeScript + Socket.IO Server + Mongoose
+- **Database**: MongoDB Atlas (`MONGODB_URI`)
 
 ---
 
-## Architecture & Parsing Notes
+## 🚀 Production Deployment Instructions
 
-PacketPulse implements a pure JavaScript binary parser for the standard `libpcap` file format (`0xa1b2c3d4` / `0xd4c3b2a1` magic numbers). This approach provides several key benefits:
-1. **Zero Native C/C++ Dependencies**: Eliminates `pcap.h` / `wpcap.dll` compilation issues across Windows, Linux, and macOS.
-2. **Defensive Parsing**: Each packet record decode step is wrapped in isolated try-catch blocks to ensure corrupted, malformed, or non-standard frames (e.g., truncated payloads or unknown EtherTypes) do not crash the parse stream.
-3. **Optimized Payload Delivery**: Packet list API responses exclude raw hex buffers to keep list payloads lightweight, streaming raw hex data only when an individual packet is clicked for detail inspection.
-
----
-
-## Project Structure
-
-```
-PacketPulse/
-├── client/
-│   ├── src/
-│   │   ├── api/              (Axios client methods)
-│   │   ├── charts/           (ProtocolPieChart, TrafficTimeChart, TopIPsBarChart)
-│   │   ├── components/       (Header, StatCard, PacketTable, PacketDetailModal)
-│   │   ├── pages/            (UploadPage, DashboardPage)
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   └── index.css         (Tailwind design system & theme tokens)
-│   ├── index.html
-│   ├── package.json
-│   ├── tailwind.config.js
-│   └── vite.config.js
-│
-├── server/
-│   ├── controllers/         (packetController.js - API & caching logic)
-│   ├── parser/              (pcapBinaryParser.js, protocolDecoder.js, sampleGenerator.js)
-│   ├── routes/              (api.js - Express endpoints)
-│   ├── uploads/             (Runtime storage for uploaded captures)
-│   ├── app.js               (Express server entry point)
-│   └── package.json
-│
-├── README.md
-└── package.json             (Root package managing dev scripts via concurrently)
-```
+### 1. Database Setup (MongoDB Atlas)
+1. Log in to [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
+2. Create a Cluster and Database named `packetpulse`.
+3. Create a Database User with read/write permissions.
+4. Copy your connection string (e.g. `mongodb+srv://<user>:<password>@cluster.mongodb.net/packetpulse?retryWrites=true&w=majority`).
 
 ---
 
-## Getting Started
+### 2. Backend Deployment (Render)
+1. Log in to [Render](https://render.com) and create a **Web Service**.
+2. Connect your Git repository and set Root Directory to `backend`.
+3. Build Command: `npm install && npm run build`
+4. Start Command: `npm start`
+5. Configure Environment Variables in Render:
+   - `NODE_ENV`: `production`
+   - `PORT`: `5000` (or Render default)
+   - `MONGODB_URI`: `<Your MongoDB Atlas Connection String>`
+   - `CORS_ORIGIN`: `https://your-frontend-app.vercel.app`
 
-### Prerequisites
+---
 
-- Node.js (v18 or higher recommended)
-- npm
+### 3. Frontend Deployment (Vercel)
+1. Log in to [Vercel](https://vercel.com) and import your Git repository.
+2. Set Root Directory to `frontend`.
+3. Build Command: `npm run build`
+4. Output Directory: `dist`
+5. Configure Environment Variables in Vercel:
+   - `VITE_API_URL`: `https://your-backend-app.onrender.com`
+   - `VITE_WS_URL`: `https://your-backend-app.onrender.com`
 
-### Installation
+---
 
-Run the setup command from the project root to install dependencies across root, server, and client:
+## Local Development
 
 ```bash
-npm run setup
-```
-
-Alternatively, install individually:
-
-```bash
-# Root dependencies
+# Backend Setup
+cd backend
 npm install
+npm run dev
 
-# Backend dependencies
-cd server && npm install
-
-# Frontend dependencies
-cd ../client && npm install
-```
-
----
-
-## Running the Application
-
-To start both the Express backend (port `5000`) and the Vite frontend dev server (port `5173`) with a single command, run:
-
-```bash
+# Frontend Setup
+cd frontend
+npm install
 npm run dev
 ```
-
-Open your browser and navigate to **`http://localhost:5173`**.
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/upload` | Upload `.pcap` / `.pcapng` / `.cap` file (multipart form data) |
-| `POST` | `/api/sample` | Synthesize & parse built-in sample `.pcap` capture |
-| `GET` | `/api/packets/:fileId` | Get paginated packet list (supports `?page=`, `?limit=`, `?protocol=`, `?query=`, `?ip=`, `?port=`) |
-| `GET` | `/api/packets/:fileId/details/:packetNumber` | Get full packet details and formatted Hex/ASCII view |
-| `GET` | `/api/packets/:fileId/stats` | Get aggregate traffic stats and chart datasets |
